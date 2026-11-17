@@ -391,9 +391,9 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-DISCOVER-ADVANCED: Album Folder Card, Ignorelist Engine & Live Scanner Status
 
-- Status: review
+- Status: done
 - Owner: agent-b
-- Updated: 2026-11-17T23:10:57Z
+- Updated: 2026-11-17T23:48:49Z
 - Depends on: UI-DISCOVER-STAGER, LOGIC-SCANNER, LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/ui/screens/discover/**`
 - Acceptance: Top Album Folder Card showing configurable storage path (`/run/media/.../media/albums`), `Rescan album folder` (with pause/resume/stop lifecycle and database recovery), and `Choose folder` directory picker; Folder & Path Ignorelist engine with quick preset chips (`+ temp`, `+ cache`, `+ raw`, `+ backups`, `+ archive`), custom ignore input with browse dialog, and default protected rules cloud (`albums/`, `node_modules/`, `.* (hidden)`, `lost+found`); real-time Scanner Status panel with State (IDLE/SCANNING/PAUSED), Checked Files count, Active Ignore Rules tag, and SQLite Cataloged count. Matches source app screenshot 3.
@@ -401,6 +401,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
   - 2026-11-17: Specified in `docs/implementation/ui/08-discover-scanner-advanced.md` after comparing source app `/discover` route and UI screenshots.
   - 2026-11-17T22:27:17Z: Claimed (in_progress) by agent-b; implementing album folder card, ignorelist engine and live scanner status under `internal/ui/screens/discover/**`.
   - 2026-11-17T23:10:57Z: Implemented active-drive banner, album folder card (Rescan album folder uses the existing scan lifecycle; Choose folder uses an injectable native directory picker), ignorelist card (presets, custom rules, protected rules, reset), live scanner status panel, and a non-blocking scaffold-folder banner. Scope expansion documented: added `Ignore []string` to `scanner.Config` and `ShouldIgnoreDirWith`/`MatchesIgnore` helpers in `internal/scanner/{scanner,ignore}.go` so custom rules actually filter directory walks; Discover gained optional `CatalogCount` and `DirectoryPicker` hooks (CatalogCount is not yet fed from libraryController — follow-up). Tests cover presets/add/reset, status values, rescan/picker, pattern matching; full suite, -race and mygo vet pass.
+  - 2026-11-17T23:48:49Z: Verified and committed by zed-agent (GLM) during review: re-ran the full suite, `-race -count=3` on discover/scanner (the earlier scanner-status race is resolved by the mutex-snapshot rendering), race on dashboard/settings/shell/wiring, and `go tool mygo vet .` on all four UI packages - all green. Committed as 515a5e4 (discover+scanner), 19b08f5 (dashboard spinner polish), c4f18ad (shell.Open settings-controller wiring + padding + integration test).
 
 #### UI-SHELL-DASHBOARD-NAV: Main Landing Routing & Dashboard Wiring
 
@@ -485,3 +486,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T23:55:00Z [zed-agent (GLM)] SYS-LIBRARY-WIRING follow-up, final state: dashboard now wires on drive change/reset (syncDashboard/resetDashboard called from sync/Close), and the Discover status/progress views snapshot their scan state under the mutex so worker-updated frames are race-free. Fixed three build breakages from the in-flight dashboard work (NewBitmap for display.Image, Spin Tip/`tk.Success` names, stale drive test fields). `go build ./...`, full `go test ./...`, `-race` on shell/discover/albums/dashboard, `go vet`, `go tool mygo vet .` and gofmt are all green; the earlier "viewer build red" note is resolved.
 - 2026-11-17T23:31:20Z [zed-agent (GLM)] UI-VIEWER-HOSTING: Created and claimed (in_progress); hosting the viewer screen in the shell and wiring catalog OpenInViewer/Inspect + dashboard OpenViewer deep-links.
 - 2026-11-17T23:41:54Z [zed-agent (GLM)] UI-VIEWER-HOSTING: Done. Viewer screen now hosted in the shell (transient ScreenViewer, full-bleed) and reachable via catalog OpenInViewer/Inspect and dashboard OpenViewer deep-links; per-drive viewer rebuilt on drive switch, Close returns to catalog. Full suite, race, mygo vet and gofmt green.
+- 2026-11-17T23:48:49Z [zed-agent (GLM)] UI-DISCOVER-ADVANCED: Verified agent-b's review-state work (full suite, race -count=3 on discover/scanner, mygo vet) and committed it as 515a5e4 / 19b08f5 / c4f18ad; task marked done. Remaining known follow-up: feed discover.CatalogCount from libraryController.
