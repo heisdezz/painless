@@ -59,13 +59,21 @@ func New(opts Options) *Service {
 	if opts.FFmpeg == "" {
 		opts.FFmpeg = "ffmpeg"
 	}
+	throttle := NewThrottler()
 	return &Service{
 		opts:     opts,
 		disk:     newDiskCache(opts.DriveRoot),
 		mem:      newMemoryCache(opts.MemoryCapacity),
-		throttle: NewThrottler(),
+		throttle: throttle,
+		webp:     newWebPPool(opts.Concurrency, opts.FFmpeg, opts.Quality, throttle),
 		sem:      make(chan struct{}, opts.Concurrency),
 	}
+}
+
+// Close stops the persistent WebP encoders. Call it when the service is no
+// longer needed.
+func (s *Service) Close() {
+	s.webp.close()
 }
 
 // Throttler returns the process gate used by the UI to pause generation
@@ -145,7 +153,13 @@ func (s *Service) generate(ctx context.Context, item domain.MediaItem) ([]byte, 
 		if err != nil {
 			return nil, err
 		}
-		return encodeWebP(ctx, s.opts.FFmpeg, resizeImage(img, s.opts.MaxDimension), s.opts.Quality, s.throttle)
+		resized := resizeImage(img, s.opts.MaxDimension)
+		if data, err := s.webp.encode(ctx, resized); err == nil {
+			return data, nil
+		}
+		// The persistent encoder may have died; a one-shot encode keeps
+		// thumbnails working until the service is recreated.
+		return encodeWebP(ctx, s.opts.FFmpeg, resized, s.opts.Quality, s.throttle)
 	case domain.MediaTypeVideo:
 		return extractVideoFrame(ctx, s.opts.FFmpeg, source, s.opts.Seek, s.opts.MaxDimension, s.opts.Quality, s.throttle)
 	default:
