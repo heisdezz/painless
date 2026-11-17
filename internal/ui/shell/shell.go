@@ -7,10 +7,12 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 
+	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/ui/screens/albums"
 	"painless/internal/ui/screens/catalog"
 	"painless/internal/ui/screens/discover"
+	"painless/internal/ui/screens/settings"
 	uitheme "painless/internal/ui/theme"
 )
 
@@ -23,8 +25,10 @@ type Shell struct {
 	catalog  *catalog.Screen
 	albums   *albums.Screen
 	discover *discover.Screen
+	settings *settings.Screen
 	drives   *driveController
 
+	logger      *logging.Logger
 	navWidth    float32
 	navExpanded bool
 	refresh     func()
@@ -35,12 +39,15 @@ func New(store *state.Store) *Shell {
 	if store == nil {
 		store = state.NewStore()
 	}
+	logger := logging.New(logging.Options{})
 	return &Shell{
 		store:       store,
 		toaster:     newToaster(store),
 		catalog:     catalog.New(catalog.Options{}),
 		albums:      albums.New(albums.Options{}),
 		discover:    discover.New(discover.Options{Store: store}),
+		logger:      logger,
+		settings:    settings.New(settings.Options{Logs: logger, Toast: store.Notify}),
 		navWidth:    220,
 		navExpanded: true,
 	}
@@ -83,6 +90,18 @@ func (s *Shell) SetDiscover(d *discover.Screen) {
 
 // Discover returns the discover & staging screen.
 func (s *Shell) Discover() *discover.Screen { return s.discover }
+
+// Logger returns the process-wide UI logger, for services and screens to
+// write diagnostic entries into the logs console.
+func (s *Shell) Logger() *logging.Logger { return s.logger }
+
+// SetSettings configures the settings screen with real controllers.
+func (s *Shell) SetSettings(screen *settings.Screen) {
+	s.settings = screen
+}
+
+// Settings returns the settings screen, for tests and further wiring.
+func (s *Shell) Settings() *settings.Screen { return s.settings }
 
 // View builds one frame of the app shell.
 func (s *Shell) View(c *mui.Context) {

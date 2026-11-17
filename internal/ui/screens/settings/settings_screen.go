@@ -221,6 +221,13 @@ func (s *Screen) drainAsync() {
 	}
 }
 
+// ShowLogsTab activates the logs tab; the shell routes the standalone
+// ScreenLogs navigation here.
+func (s *Screen) ShowLogsTab() { s.tab = 3 }
+
+// Logs returns the wired logger, for tests and shell assertions.
+func (s *Screen) Logs() *logging.Logger { return s.logs }
+
 // raise shows a toast when a notifier is wired. Safe from any goroutine:
 // the notifier must be (store.Notify and the test recorder both are).
 func (s *Screen) raise(level domain.LogLevel, title, body string) {

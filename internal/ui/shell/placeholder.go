@@ -76,6 +76,15 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.discover.View(c) })
 			return
 		}
+		if screen == state.ScreenSettings && s.settings != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.settings.View(c) })
+			return
+		}
+		if screen == state.ScreenLogs && s.settings != nil {
+			s.settings.ShowLogsTab()
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.settings.View(c) })
+			return
+		}
 		mui.Scroll(c).Grow(1).Basis(0).Children(func() {
 			mui.Column(c).Fill().Center().Padding(24).Children(func() {
 				display.Empty(c, display.EmptyProps{
