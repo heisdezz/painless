@@ -280,14 +280,21 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-MEDIA-VIEWER: Lobe Image Preview Viewer & Native Video Player
 
-- Status: in_progress
+- Status: done
 - Owner: agent-alpha
-- Updated: 2026-11-17T21:40:00Z
+- Updated: 2026-11-17T22:30:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-THUMBNAIL
 - Allowed paths/scope: `internal/ui/screens/viewer/**`
 - Acceptance: Full-res photo viewer with zoom/pan toolbar via `display.Image`, `feedback.Drawer` EXIF metadata panel, and native video player using ffmpeg frame pipe with `ui.VideoPlayer` and `field.Slider`.
 - Notes:
   - 2026-11-17: Claimed (in_progress) by agent-alpha. Implementing high-res photo viewer with zoom/pan via display.Image, video playback with scrubber controls, ffmpeg frame decoder, and EXIF metadata drawer via feedback.Drawer under `internal/ui/screens/viewer/**`.
+  - 2026-11-17T22:30:00Z: Done. Implemented pure Go native media viewer under `internal/ui/screens/viewer/**`:
+    - Photo viewing: `display.Image` with `ImageFilled`, pure Go async decoding via `mui.DecodeImage`, skeleton loading placeholders, and error states.
+    - Video player: `mui.VideoPlayer` and `mui.Video` with `-nostdin` subprocess safety and `os.Stat` precheck in `FFmpegDecoder` (`mui.VideoSeeker`), play/pause controls with `action.ActionIcon`, timeline scrubber via `choice.Slider`, timestamp tags, mute toggle, and background thumbnail `Throttler` integration (`Pause()` during playback, `Resume()` on pause/exit).
+    - EXIF & details drawer: `feedback.Drawer` (Right) containing `display.AccordionOutlined` with sections for File Attributes (with `action.CopyButton` for SHA-256), Dimensions & Codecs (aspect ratio, duration, bitrate), Camera details (Make, Model, Lens, Aperture, Shutter, ISO, Focal length, Date Taken), and GPS coordinates (with `action.CopyButton`).
+    - Top toolbar: file name, counter badge, sequence navigation (`PrevItem`, `NextItem`), drawer toggle, and close action.
+    - Global keyboard navigation: `mui.KeyLeft`, `mui.KeyRight`, `mui.KeyEscape`.
+    - Unit tests (7 tests), race detection (-race), and `go vet` all pass.
 
 #### UI-DISCOVER-STAGER: Scanner Progress & Staging Review
 
@@ -311,6 +318,17 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - Notes:
   - 2026-11-17T21:30:00Z: Claimed. Scope includes the still-missing `internal/logging` engine (memory ring buffer, level filter) which the logs console consumes. Screen is built standalone against controller interfaces; a small shell content-area hook will be added once agent-b's shell edits settle (same pattern as catalog/discover wiring).
   - 2026-11-17T22:05:00Z: Done. `internal/logging`: concurrency-safe ring buffer with level filtering, case-insensitive Query (search + level + newest-tail limit), change notification hook and text Export; unit + race tests pass. `internal/ui/screens/settings`: four tabs — Backups (health card, integrity tag, async VACUUM-backup with busy state, snapshot list with modal-confirmed restore), Mobile sync (`choice.Switch` toggle, `field.InputNumber` port, `code.QRCode` + `action.CopyButton` pairing card, masked token with regenerate confirm modal), Google Drive (TextArea credentials + folder ID with dirty-tag save, async Test connection with Spin→success/error Tag, async Backup Now), Logs (`field.SearchBar` + `action.Segmented` level filter + auto-scroll Switch via TrackScroll + severity Tags + export to temp file). Controllers are DI interfaces so every tab is fake-testable; async workers publish through a mutex-guarded mailbox drained at the top of View (race-clean under -race). All packages: go test ./..., -race on logging+settings, go vet, mygo vet pass. Shell wiring (ScreenSettings/ScreenLogs branches in placeholder.go) still deferred pending agent-b's shell edits.
+
+#### UI-SHELL-SETTINGS-WIRING: Host Settings & Logs Screens in Shell
+
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T22:15:00Z
+- Depends on: UI-SETTINGS-LOGS, UI-SHELL-NAV
+- Allowed paths/scope: `internal/ui/shell/shell.go`, `internal/ui/shell/placeholder.go`, `internal/ui/shell/settings_wiring_test.go`, `internal/ui/screens/settings/settings_screen.go` (ShowLogsTab accessor only)
+- Acceptance: Navigating to Settings (and the standalone System Logs entry) renders the settings screen in the shell content area with a process-wide logger attached; toasts raised by settings workers appear in the shell toaster; shell tests and race checks pass.
+- Notes:
+  - 2026-11-17T22:15:00Z: Claimed (follow-up promised on UI-SETTINGS-LOGS). Same owner-screen-hosts-itself pattern agent-alpha used for albums/discover. agent-b's shell edits (drive_bar/toast/window/library) are untouched; shell.go and placeholder.go were clean at claim time.
 
 ### Phase 7: Integration
 
@@ -366,3 +384,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T20:51:31Z [kimi-k3] UI-MEDIA-VIEWER: Claimed (in_progress); building photo preview, metadata drawer, and ffmpeg-backed video player under internal/ui/screens/viewer/\*\*.
 - 2026-11-17T20:58:46Z [agent-b] SYS-LIBRARY-WIRING: Completed (review); active-drive DB/MediaRepo/thumbnails now feed the catalog, with lifecycle cleanup and tests; shell tests and race checks pass.
 - 2026-11-17T22:05:00Z [zed-agent (GLM)] UI-SETTINGS-LOGS: Done. Added internal/logging ring-buffer engine (level filter, query, export) and the settings screen — Backups, Mobile sync (QR pairing), Google Drive, and searchable Logs console — with controller interfaces, async mailbox pattern, and unit/race/vet checks. Shell wiring deferred until agent-b's shell edits settle.
+- 2026-11-17T22:30:00Z [agent-alpha] UI-MEDIA-VIEWER: Completed (done); high-res photo viewer with display.Image, native video player with ffmpeg RGBA frame decoder and throttler pausing, EXIF metadata drawer with display.Accordion and action.CopyButton, keyboard shortcuts, unit tests and race checks passed; marked done.
