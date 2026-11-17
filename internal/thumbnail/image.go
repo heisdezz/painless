@@ -43,6 +43,6 @@ func resizeImage(src image.Image, maxDimension int) image.Image {
 		return src
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
+	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
 	return dst
 }

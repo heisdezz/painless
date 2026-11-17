@@ -2,12 +2,12 @@ package thumbnail
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"image"
-	"image/png"
+	"image/draw"
 	"io"
 	"os/exec"
 	"strconv"
@@ -26,9 +26,9 @@ type encodeResult struct {
 	err  error
 }
 
-// webpEncoder owns one long-lived ffmpeg process. Reusing the process avoids
-// paying ffmpeg's startup cost for every thumbnail. PNG frames carry each
-// image because, unlike rawvideo, image2pipe accepts varying dimensions.
+// webpEncoder owns one long-lived ffmpeg process for a fixed frame size.
+// Rawvideo streams a frame as soon as it is written, so the process can be
+// reused instead of paying ffmpeg's startup cost for every thumbnail.
 type webpEncoder struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
@@ -36,15 +36,17 @@ type webpEncoder struct {
 	requests chan encodeRequest
 	stop     chan struct{}
 	done     chan struct{}
+	busy     atomic.Int32
 	once     sync.Once
 }
 
-func newWebPEncoder(ffmpeg string, quality int, throttle *Throttler) (*webpEncoder, error) {
+func newWebPEncoder(ffmpeg string, width, height, quality int, throttle *Throttler) (*webpEncoder, error) {
 	cmd := exec.Command(ffmpeg,
 		"-loglevel", "error",
-		"-f", "image2pipe", "-c:v", "png", "-i", "pipe:0",
+		"-f", "rawvideo", "-pix_fmt", "rgba",
+		"-s", fmt.Sprintf("%dx%d", width, height), "-i", "pipe:0",
 		"-c:v", "libwebp", "-quality", strconv.Itoa(quality),
-		"-f", "image2pipe", "pipe:1",
+		"-f", "image2pipe", "-flush_packets", "1", "pipe:1",
 	)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -98,12 +100,10 @@ func (e *webpEncoder) run() {
 }
 
 func (e *webpEncoder) encode(img image.Image) ([]byte, error) {
-	var frame bytes.Buffer
-	encoder := png.Encoder{CompressionLevel: png.BestSpeed}
-	if err := encoder.Encode(&frame, img); err != nil {
-		return nil, err
-	}
-	if _, err := e.stdin.Write(frame.Bytes()); err != nil {
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
+	if _, err := e.stdin.Write(rgba.Pix); err != nil {
 		return nil, err
 	}
 	header := make([]byte, 12)
@@ -134,33 +134,68 @@ func (e *webpEncoder) close() {
 	})
 }
 
-// webpPool round-robins requests over a few encoders. If ffmpeg cannot be
-// started, callers fall back to a one-shot encode.
+// webpPool keeps a small number of encoders keyed by frame size. Requests
+// for an uncached size start one; idle encoders are evicted least-recently.
 type webpPool struct {
-	encoders []*webpEncoder
-	next     atomic.Uint64
+	mu       sync.Mutex
+	encoders map[string]*webpEncoder
+	recent   []string
+	max      int
+	ffmpeg   string
+	quality  int
+	throttle *Throttler
 }
 
-func newWebPPool(count int, ffmpeg string, quality int, throttle *Throttler) *webpPool {
-	pool := &webpPool{}
-	for i := 0; i < count; i++ {
-		encoder, err := newWebPEncoder(ffmpeg, quality, throttle)
-		if err != nil {
+func newWebPPool(max int, ffmpeg string, quality int, throttle *Throttler) *webpPool {
+	if max < 1 {
+		max = 1
+	}
+	return &webpPool{
+		encoders: make(map[string]*webpEncoder, max),
+		max:      max,
+		ffmpeg:   ffmpeg,
+		quality:  quality,
+		throttle: throttle,
+	}
+}
+
+func (p *webpPool) encoderFor(width, height int) (*webpEncoder, error) {
+	key := fmt.Sprintf("%dx%d", width, height)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if encoder := p.encoders[key]; encoder != nil {
+		p.touch(key)
+		return encoder, nil
+	}
+	encoder, err := newWebPEncoder(p.ffmpeg, width, height, p.quality, p.throttle)
+	if err != nil {
+		return nil, err
+	}
+	p.encoders[key] = encoder
+	p.touch(key)
+	for len(p.encoders) > p.max {
+		victim := p.evictable()
+		if victim == "" {
 			break
 		}
-		pool.encoders = append(pool.encoders, encoder)
+		p.encoders[victim].close()
+		delete(p.encoders, victim)
+		p.recent = removeKey(p.recent, victim)
 	}
-	return pool
+	return encoder, nil
 }
 
 func (p *webpPool) encode(ctx context.Context, img image.Image) ([]byte, error) {
-	if len(p.encoders) == 0 {
-		return nil, errors.New("no WebP encoders available")
+	bounds := img.Bounds()
+	encoder, err := p.encoderFor(bounds.Dx(), bounds.Dy())
+	if err != nil {
+		return nil, err
 	}
-	index := p.next.Add(1) % uint64(len(p.encoders))
+	encoder.busy.Add(1)
+	defer encoder.busy.Add(-1)
 	request := encodeRequest{image: img, result: make(chan encodeResult, 1)}
 	select {
-	case p.encoders[index].requests <- request:
+	case encoder.requests <- request:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -173,7 +208,35 @@ func (p *webpPool) encode(ctx context.Context, img image.Image) ([]byte, error) 
 }
 
 func (p *webpPool) close() {
-	for _, encoder := range p.encoders {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for key, encoder := range p.encoders {
 		encoder.close()
+		delete(p.encoders, key)
 	}
+	p.recent = nil
+}
+
+func (p *webpPool) touch(key string) {
+	p.recent = removeKey(p.recent, key)
+	p.recent = append(p.recent, key)
+}
+
+func (p *webpPool) evictable() string {
+	for i := len(p.recent) - 1; i >= 0; i-- {
+		key := p.recent[i]
+		if p.encoders[key].busy.Load() == 0 {
+			return key
+		}
+	}
+	return ""
+}
+
+func removeKey(keys []string, key string) []string {
+	for i, existing := range keys {
+		if existing == key {
+			return append(keys[:i], keys[i+1:]...)
+		}
+	}
+	return keys
 }

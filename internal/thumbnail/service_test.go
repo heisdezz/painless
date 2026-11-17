@@ -68,6 +68,7 @@ func TestImageThumbnailAndDiskCache(t *testing.T) {
 	root := t.TempDir()
 	writeTestJPEG(t, filepath.Join(root, "photos", "a.jpg"), 640, 480)
 	service := New(Options{DriveRoot: root, MaxDimension: 320})
+	defer service.Close()
 	item := testItem(filepath.Join("photos", "a.jpg"), "abcdef123456", "image/jpeg")
 
 	data, err := service.Get(context.Background(), item)
@@ -92,6 +93,7 @@ func TestImageThumbnailAndDiskCache(t *testing.T) {
 
 	// A fresh service must find the same thumbnail on disk.
 	reopened := New(Options{DriveRoot: root, MaxDimension: 320})
+	defer reopened.Close()
 	fromDisk, err := reopened.Get(context.Background(), item)
 	if err != nil || !bytes.Equal(data, fromDisk) {
 		t.Fatalf("disk cache read: %d bytes, err %v", len(fromDisk), err)
@@ -108,6 +110,7 @@ func TestGetPath(t *testing.T) {
 	writeTestJPEG(t, filepath.Join(root, "b.png"), 8, 8)
 	item := testItem("b.png", "hash01", "image/jpeg")
 	service := New(Options{DriveRoot: root})
+	defer service.Close()
 	path, err := service.GetPath(context.Background(), item)
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +137,7 @@ func TestVideoThumbnail(t *testing.T) {
 	}
 
 	service := New(Options{DriveRoot: root, MaxDimension: 320})
+	defer service.Close()
 	item := testItem("clip.mp4", "videohash", "video/mp4")
 	data, err := service.Get(context.Background(), item)
 	if err != nil {
@@ -146,6 +150,7 @@ func TestThrottlerGate(t *testing.T) {
 	root := t.TempDir()
 	writeTestJPEG(t, filepath.Join(root, "c.jpg"), 100, 100)
 	service := New(Options{DriveRoot: root})
+	defer service.Close()
 	item := testItem("c.jpg", "gatehash", "image/jpeg")
 
 	service.Throttler().Pause()
@@ -221,6 +226,7 @@ func waitForState(pid int, want string) error {
 func TestInvalidInputs(t *testing.T) {
 	root := t.TempDir()
 	service := New(Options{DriveRoot: root})
+	defer service.Close()
 
 	if _, err := service.Get(context.Background(), testItem("x.jpg", "", "image/jpeg")); !errors.Is(err, ErrNoHash) {
 		t.Fatalf("empty hash error = %v", err)
@@ -240,6 +246,7 @@ func BenchmarkImageThumbnail(b *testing.B) {
 	root := b.TempDir()
 	writeTestJPEG(b, filepath.Join(root, "bench.jpg"), 1200, 800)
 	service := New(Options{DriveRoot: root, MaxDimension: 320})
+	defer service.Close()
 	item := testItem("bench.jpg", "benchhash", "image/jpeg")
 	ctx := context.Background()
 	b.ResetTimer()
