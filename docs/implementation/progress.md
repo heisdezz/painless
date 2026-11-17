@@ -335,14 +335,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### SYS-SETTINGS-VALUES: Wire Real Controllers into Settings Tabs
 
-- Status: in_progress
+- Status: cancelled
 - Owner: agent-b
-- Updated: 2026-11-17T21:50:55Z
+- Updated: 2026-11-17T22:12:45Z
 - Depends on: UI-SETTINGS-LOGS, UI-SHELL-SETTINGS-WIRING, SYS-LIBRARY-WIRING
 - Allowed paths/scope: `internal/ui/shell/settings_*.go`, `internal/ui/shell/shell.go`, `internal/ui/shell/library.go`
 - Acceptance: Settings tabs show real DB path/size/backups/integrity, mobile pairing values and gdrive credentials from persisted app config; enabling mobile sync starts the LAN server; controls persist their values. Tests with temp config/drive roots.
 - Notes:
   - 2026-11-17T21:50:55Z: Claimed. Follow-up to the layout fix on the settings screen; registry has no unclaimed tasks left.
+  - 2026-11-17T22:12:45Z: Cancelled as a duplicate of zed-agent's SYS-SETTINGS-CONTROLLERS (`internal/wiring`), claimed earlier at 21:44:56 with an explicit boundary that the shell should consume its controllers via SetSettings. Removed the shell-local duplicate controllers and restored library.go/shell.go to their prior state. `shell.Open()` now builds `wiring.New(store).SettingsScreen(...)` and closes the controllers on window teardown; added a shell test that real backup/mobile/gdrive values render. Heads-up to zed-agent: `go test ./internal/wiring` currently fails in TestMobileStartStopAndPing, TestMobileFollowsDriveAttach and the persistence tests.
 
 ### Phase 7: Integration
 
@@ -361,13 +362,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### SYS-SETTINGS-CONTROLLERS: Real Settings Controllers (Backups, Mobile Sync, GDrive)
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GLM)
-- Updated: 2026-11-17T21:44:56Z
+- Updated: 2026-11-17T22:25:50Z
 - Depends on: UI-SETTINGS-LOGS, LOGIC-DB-SQLITE, LOGIC-MOBILE-SYNC, LOGIC-GDRIVE-BACKUP, SYS-LIBRARY-WIRING (read-only: consumes state.Store)
 - Allowed paths/scope: `internal/wiring/**` (new package), `docs/implementation/progress.md`. Does NOT touch `internal/ui/shell/library.go` or other agents' files; shell gets the controller-backed screen via the existing `Shell.SetSettings` hook.
 - Acceptance: `internal/wiring` provides implementations of `settings.BackupsController`, `settings.MobileSyncController` and `settings.GDriveController` backed by real services: storage DB (ephemeral connections for backup/integrity/restore), mobile.Server (start/stop/restart, LAN URL, token), gdrive.Client (TestConnection, BackupNow). Settings persist as JSON on the active drive (`<root>/.painless/settings.json`). Unit tests with temporary drive roots; race checks and mygo vet pass.
 - Notes:
+  - 2026-11-17T22:25:50Z: Done. `internal/wiring`: `Controllers` bundle (`New`/`Close`/`SettingsScreen`) with `Backups` (ephemeral storage.Open per op: CreateBackup 2min timeout, ListBackups mapping, IntegrityCheck PRAGMA, atomic staged restore), `Mobile` (owns mobile.Server + its own DB/repos while running; lazy per-drive config refresh + bus pump auto-starts/stops on attach/detach; enabled is session-volatile, token/port/creds persist per drive; live-restart on port/token change; LAN URL with loopback fallback), `GDrive` (client cache keyed by credentials, swappable clientFactory for tests, TestConnection 30s / BackupNow 30min timeouts, VACUUM INTO snapshotter adapter). Persistence: `<drive>/.painless/settings.json` (atomic temp+rename; corrupt file -> defaults). Tests: 19 unit tests incl. real HTTP ping round-trips and drive attach/detach lifecycles; race and mygo vet clean. Known limitation: RestoreBackup swaps the db file while other components' connections stay open (stale pages until reopen) - owned by library wiring. Shell integration hook: `Controllers.SettingsScreen(logger, store.Notify)` -> `Shell.SetSettings` (entrypoint task).
   - 2026-11-17T21:44:56Z: Claimed. Design: controllers are goroutine-safe and resolve the active drive via `store.State.ActiveDrive()` (RWMutex-protected) instead of hooking libraryController, so agent-b's in-flight shell files stay untouched. Backups open ephemeral `storage.Open` connections per operation (WAL-safe alongside the library's live connection). Mobile server owns its own DB connection + repos while running, auto starts/stops on drive change via bus subscription. GDrive caches a client per credentials payload. Persistence is per-drive JSON; live-connection invalidation on restore is a known limitation deferred to library wiring.
 
 ---
@@ -376,14 +378,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-DASHBOARD-HOME: Drive Selector Grid & Drive Stats Dashboard
 
-- Status: todo
-- Owner: -
-- Updated: 2026-11-17T23:05:00Z
+- Status: in_progress
+- Owner: agent-alpha
+- Updated: 2026-11-17T23:12:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-DRIVE-DETECT, LOGIC-MEDIA-REPO
 - Allowed paths/scope: `internal/ui/screens/dashboard/**`
 - Acceptance: Drive selector grid when no drive selected (mounted badges, capacity gauges, click to select), drive summary header card with actions (`Scan Volume`, `Refresh`, `Disconnect`), 3 stat cards (total media items, total albums, storage used % and progress bar), recently added media horizontal carousel, and recent albums carousel. Matches source app screenshots 1 & 2.
 - Notes:
   - 2026-11-17: Specified in `docs/implementation/ui/07-dashboard-drive-home.md` after comparing source app root route (`/`) and UI screenshots.
+  - 2026-11-17T23:12:00Z: Claimed (in_progress) by agent-alpha. Implementing drive selection grid, drive overview header, 3 stat cards, recent media preview, and recent albums preview under `internal/ui/screens/dashboard/**`.
 
 #### UI-DISCOVER-ADVANCED: Album Folder Card, Ignorelist Engine & Live Scanner Status
 
@@ -453,4 +456,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T22:45:00Z [agent-alpha] Full System Integration: Promoted UI-SHELL-NAV, UI-CATALOG-GRID, and SYS-LIBRARY-WIRING to done. Verified all 19 packages pass unit tests, race detection (go test -race ./...), and go vet with 0 errors across entire workspace.
 - 2026-11-17T21:50:55Z [agent-b] Layout fix in zed-agent's settings screen: added 28 DIP horizontal padding to `settings.Screen.View` so tabs and the Logs controls align with the shell heading and keep off the right edge; settings and shell tests pass.
 - 2026-11-17T21:50:55Z [agent-b] SYS-SETTINGS-VALUES: Created and claimed (in_progress); wiring real backup, mobile sync and Google Drive controllers into the settings tabs.
+- 2026-11-17T22:12:45Z [agent-b] SYS-SETTINGS-VALUES: Cancelled as a duplicate of zed-agent's earlier SYS-SETTINGS-CONTROLLERS; shell now consumes `internal/wiring` controllers via SetSettings, shell-local duplicates removed. Noted three failing tests in internal/wiring for the owning agent.
 - 2026-11-17T23:05:00Z [agent-alpha] Analyzed source application UI screenshots: identified missing main entry / dashboard route (/), drive selection picker, 3 stat cards, recent media/albums carousels, and missing Discover features (Album folder card, Ignorelist presets/custom tags, live Scanner Status card). Documented specs in docs/implementation/ui/07-dashboard-drive-home.md and 08-discover-scanner-advanced.md; added Phase 8 tasks in progress.md.
+- 2026-11-17T23:12:00Z [agent-alpha] UI-DASHBOARD-HOME: Claimed (in_progress); starting implementation of Drive Selector Grid, Drive Header Card, 3 Stat Cards, Recent Media and Recent Albums carousels under internal/ui/screens/dashboard/**.
+- 2026-11-17T22:25:50Z [zed-agent (GLM)] SYS-SETTINGS-CONTROLLERS: Done. New internal/wiring package implements the settings screen controllers over real services: backups via ephemeral SQLite connections (create/list/integrity/atomic restore), mobile sync server lifecycle bound to drive attach/detach events with per-drive JSON settings (<root>/.painless/settings.json), and Google Drive test/backup with a cached client. 19 tests, race and mygo vet clean; shell integration ready via Controllers.SettingsScreen.
