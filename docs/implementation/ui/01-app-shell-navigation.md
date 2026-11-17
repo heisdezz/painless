@@ -1,21 +1,23 @@
 # UI Feature 01: Application Shell, Navigation & Notifications
 
 ## 1. Overview
-The Application Shell is the root container of Painless built on MyGo (`github.com/egoist/mygo` and `github.com/egoist/mygo/ui`). It manages the desktop window, the dark theme styling, the persistent navigation sidebar, the active drive switcher, toast notifications, and modal dialog overlays.
+
+The Application Shell is the root container of Painless built on MyGo (`github.com/egoist/mygo/ui`) and Lobe MyGo (`github.com/lobehub/lobe-mygo`). It manages the desktop window, the Lobe design tokens/theme, the persistent collapsible sidebar navigation (`layout.DraggableSideNav`), the active drive switcher, toast notifications (`feedback.Toast`), and modal dialog overlays (`overlay.Modal`).
 
 ---
 
-## 2. MyGo Native UI Principles
+## 2. MyGo & Lobe MyGo Native UI Principles
 
 1. **Window Setup (`mygo.NewWindow`)**:
    - Initial size: 1200 x 800.
    - Minimum size: 800 x 600.
    - Pinned state: `StateKey: "painless_main_window"` (remembers geometry across launches).
-2. **Context Isolation**:
+2. **Lobe Theme Tokens**:
+   - Use `github.com/lobehub/lobe-mygo/pkg/theme` for surface colors, border strokes, and typography.
+   - Consistent dark/light adaptation with GPU-drawn components.
+3. **Context Isolation**:
    - Views receive `*ui.Context` during render passes.
-   - `*ui.Context` **must not** be stored in app state or goroutines.
-   - Persistent handles (`ui.Handle`) and stable keys (`c.Key(...)`) must be used for all stateful widgets.
-3. **Async UI Updates**:
+   - `*ui.Context` **must not** be stored in app state or background goroutines.
    - Background tasks (scans, drive polling, uploads) communicate results via `window.Update(func())`.
 
 ---
@@ -23,21 +25,24 @@ The Application Shell is the root container of Painless built on MyGo (`github.c
 ## 3. Shell Layout & Structure
 
 ```
++--------------------------------------------------------------------------+
+| [HardDrive Icon] PAINLESS   Active Drive: [ Samsung T7 (1.8 TB) v ] [Sync] |
 +--------------------+-----------------------------------------------------+
-| [Icon] PAINLESS    | Active Drive: [ Samsung T7 (1.8 TB) v ] [Refresh]   |
-+--------------------+-----------------------------------------------------+
-| [o] Library        |                                                     |
-| [ ] Albums         |                                                     |
-| [ ] Discover/Scan  |                 MAIN CONTENT AREA                   |
-| [ ] Settings       |                (Active Screen View)                 |
+| [layout.           |                                                     |
+|  DraggableSideNav] |                                                     |
+|                    |                                                     |
+| [o] Library        |                 MAIN CONTENT AREA                   |
+| [ ] Albums         |                (Active Screen View)                 |
+| [ ] Discover/Scan  |                                                     |
+| [ ] Settings       |                                                     |
 | [ ] Logs           |                                                     |
 |                    |                                                     |
 | ------------------ |                                                     |
-| Drive Storage:     |                                                     |
-| [==== 68% ====   ] |                                                     |
+| Storage Gauge:     |                                                     |
+| [feedback.Progress]|                                                     |
 | 620 GB free of 2TB |                                                     |
 +--------------------+-----------------------------------------------------+
-| [Toast / Status Bar: Scan completed - 420 media files indexed]           |
+| [feedback.Toast: Scan completed - 420 media files indexed]               |
 +--------------------------------------------------------------------------+
 ```
 
@@ -45,34 +50,38 @@ The Application Shell is the root container of Painless built on MyGo (`github.c
 
 ## 4. Components
 
-1. **Sidebar Navigation (`internal/ui/shell/sidebar.go`)**:
-   - Uses `ui.Sidebar` or a structured `ui.Column` with active route indicator.
-   - Navigation targets:
-     - `ScreenCatalog` (Media Library)
-     - `ScreenAlbums` (Albums Gallery)
-     - `ScreenDiscover` (Drive Scanner & Stager)
-     - `ScreenSettings` (Configuration & Backups)
-     - `ScreenLogs` (System Log Viewer)
-2. **Drive Switcher & Storage Meter (`internal/ui/shell/drive_bar.go`)**:
-   - Dropdown or flyout menu listing all mounted removable drives.
-   - Visual bar displaying used vs free space percentage (`t.Success`, `t.Warning`, `t.Danger` color transitions).
-   - "Unmount / Eject" button with confirmation.
+1. **Draggable Side Navigation (`internal/ui/shell/sidebar.go`)**:
+   - Built on `github.com/lobehub/lobe-mygo/pkg/layout.DraggableSideNav`.
+   - Collapses to a slim icon rail (58 DIP) or expands with labels.
+   - Navigation targets using `github.com/lobehub/lobe-mygo/pkg/lucide` icons:
+     - `ScreenCatalog`: `lucide.FolderHeart` (Media Library)
+     - `ScreenAlbums`: `lucide.Images` (Albums Gallery)
+     - `ScreenDiscover`: `lucide.ScanSearch` (Drive Scanner & Stager)
+     - `ScreenSettings`: `lucide.Settings` (Configuration & Backups)
+     - `ScreenLogs`: `lucide.ScrollText` (System Log Console)
+2. **Drive Switcher & Storage Gauge (`internal/ui/shell/drive_bar.go`)**:
+   - Drive selector powered by `github.com/lobehub/lobe-mygo/pkg/field.Select`.
+   - Visual disk usage bar using `github.com/lobehub/lobe-mygo/pkg/feedback.Progress` (with dynamic status colors for >85% and >95% full).
+   - "Refresh Drives" action using `github.com/lobehub/lobe-mygo/pkg/action.ActionIcon`.
 3. **Toast Notifications (`internal/ui/shell/toast.go`)**:
-   - Uses `ui.Toast` for floating, transient feedback (e.g. "5 files moved to Vacation", "Backup completed", "Drive unmounted").
+   - Powered by `github.com/lobehub/lobe-mygo/pkg/feedback.Toast`.
+   - Brief notifications that stack in a corner, peek behind the newest, and spread out under the pointer with status tints (`Success`, `Warn`, `Error`).
 
 ---
 
 ## 5. File Structure
-- `internal/ui/shell/window.go`: Window setup, `WhenReady` callback, view switch dispatcher.
-- `internal/ui/shell/sidebar.go`: Navigation bar and route buttons.
-- `internal/ui/shell/drive_bar.go`: Active drive selector and disk usage gauge.
-- `internal/ui/shell/toast.go`: Toast manager and renderer.
-- `internal/ui/theme/theme.go`: Dark theme tokens, accent colors, spacing metrics.
+
+- `internal/ui/shell/window.go`: Window initialization, `WhenReady` callback, view dispatcher.
+- `internal/ui/shell/sidebar.go`: `layout.DraggableSideNav` implementation with Lucide icons.
+- `internal/ui/shell/drive_bar.go`: `field.Select` drive picker and `feedback.Progress` gauge.
+- `internal/ui/shell/toast.go`: Toast manager wrapper around `feedback.Toast`.
+- `internal/ui/theme/theme.go`: Lobe design tokens configuration.
 
 ---
 
 ## 6. Acceptance Criteria
-- [ ] Application window launches with dark theme styling and remembers size across restarts.
-- [ ] Sidebar switches views instantly without flickers or layout jumps.
-- [ ] Drive switcher updates available drives when USB drives are inserted/removed.
-- [ ] Toast notifications appear and auto-dismiss after 3 seconds.
+
+- [ ] Application window launches with Lobe dark styling and remembers size across restarts.
+- [ ] `DraggableSideNav` resizes smoothly and collapses to slim rail mode.
+- [ ] Drive switcher updates dynamically on USB drive insertion/removal.
+- [ ] `feedback.Toast` notifications stack cleanly and dismiss automatically.

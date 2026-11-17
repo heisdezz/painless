@@ -1,49 +1,54 @@
 # UI Feature 02: Media Catalog Grid, Virtualization & Selection
 
 ## 1. Overview
-The Media Catalog is the primary browsing interface. It displays thousands of media items in a virtualized, performant grid using MyGo's `ui.GridView`, with multi-selection, search, filtering, and batch operations.
+
+The Media Catalog is the primary media browsing view. It displays thousands of media items using MyGo's virtualized `ui.GridView` alongside Lobe UI components for search (`field.SearchBar`), filtering (`choice.Segmented`), sorting (`field.Select`), and empty states (`display.Empty`).
 
 ---
 
-## 2. Key Components & Features
+## 2. Key Components & Lobe Integration
 
-1. **Virtualized Grid (`ui.GridView`)**:
-   - Thousands of items cannot be rendered as simple DOM/layout elements without massive frame drops.
-   - `ui.GridView` calculates visible rows based on window viewport and only builds visible cells.
-   - Reusable cell configuration with stable item keys (`Key: func(i int) any { return items[i].ID }`).
-2. **Multi-Selection (`ui.GridState.Selection`)**:
-   - `Ctrl+Click` (or `Cmd+Click` on macOS): Toggle individual item in/out of selection.
-   - `Shift+Click`: Contiguous range selection between last selected item and current item.
-   - `Ctrl+A`: Select all displayed items.
-   - Selection status reflected visually on the card border and badge checkmark.
-3. **Filter Bar & Search**:
-   - `ui.TextInput`: Debounced text search matching file path and metadata.
-   - Segmented / Toggle Buttons: Filter by type (`All`, `Photos`, `Videos`).
-   - Sort dropdown: Date (newest/oldest), Name (A-Z), Size (largest/smallest).
-4. **Batch Action Toolbar**:
-   - Appears when 1 or more items are selected.
-   - Actions:
-     - "Move to Album": Opens destination album picker dialog.
-     - "Remove from Album": Clears album assignment.
-     - "Delete Selected": Confirms removal from drive/library.
-     - "Deselect All": Clears selection.
+1. **Search & Filter Bar (`internal/ui/screens/catalog/filter_bar.go`)**:
+   - `github.com/lobehub/lobe-mygo/pkg/field.SearchBar`: Debounced search with search icon, clear button, and window-wide shortcut key tag (`Cmd/Ctrl+F`).
+   - `github.com/lobehub/lobe-mygo/pkg/choice.Segmented`: Sliding pill segment indicator choosing between `All`, `Photos`, and `Videos`.
+   - `github.com/lobehub/lobe-mygo/pkg/field.Select`: Sort dropdown (Newest First, Oldest First, Name A-Z, File Size).
+   - Item count badge: `github.com/lobehub/lobe-mygo/pkg/display.Tag` or `feedback.Badge`.
+2. **Virtualized Media Grid (`ui.GridView`)**:
+   - High-throughput virtualized rendering for 10,000+ items.
+   - Reusable cell configuration with stable keys (`Key: func(i int) any { return items[i].ID }`).
+   - Cards display video duration overlay badge (`display.Tag`) and file size.
+3. **Empty State (`display.Empty`)**:
+   - When no media matches search filters or the library is empty, render `github.com/lobehub/lobe-mygo/pkg/display.Empty` with `lucide.FolderSearch`, descriptive text, and a "Start Scan" action button (`action.Button`).
+4. **Multi-Selection & Batch Action Bar**:
+   - Multi-selection powered by `ui.GridState.Selection` (Ctrl+Click, Shift+Click, Ctrl+A).
+   - Floating batch action toolbar (`internal/ui/screens/catalog/action_bar.go`):
+     - `action.Button`: "Move to Album..." (Primary)
+     - `action.Button`: "Remove from Album"
+     - `action.Button`: "Delete Selected" (Danger variant)
+     - `action.ActionIcon`: `lucide.X` to clear selection.
+5. **Context Menu (`nav.ContextMenu`)**:
+   - Right-click on any media card opens a Lobe `nav.ContextMenu` with options:
+     - Open in Viewer
+     - Assign to Album...
+     - Reveal in File Manager
+     - Inspect EXIF Metadata
+     - Delete
 
 ---
 
 ## 3. Asynchronous Thumbnail Rendering in Grid
 
-To keep scrolling at 60 FPS:
+To maintain 60 FPS scrolling:
+
 ```go
 func (s *CatalogScreen) renderCell(c *ui.Context, item domain.MediaItem) {
     thumbBitmap := s.cache.Get(item.FileHash)
     if thumbBitmap == nil {
-        // Thumbnail not yet in RAM; request async background load
         s.cache.RequestLoad(item)
-        // Show placeholder while loading
-        ui.Placeholder(c).Width(160).Height(120)
+        // Lobe skeleton block during load
+        display.Skeleton(c).Width(160).Height(120).Radius(8)
         return
     }
-    // Draw cached bitmap
     ui.Image(c, thumbBitmap).Width(160).Height(120).Fit(ui.Cover)
 }
 ```
@@ -51,15 +56,18 @@ func (s *CatalogScreen) renderCell(c *ui.Context, item domain.MediaItem) {
 ---
 
 ## 4. File Structure
+
 - `internal/ui/screens/catalog/catalog_view.go`: Main catalog screen view builder.
-- `internal/ui/screens/catalog/filter_bar.go`: Search input, type filter, sort selector.
-- `internal/ui/screens/catalog/action_bar.go`: Bottom floating batch actions toolbar.
-- `internal/ui/screens/catalog/media_card.go`: Single card cell layout with badge, duration, size.
+- `internal/ui/screens/catalog/filter_bar.go`: `field.SearchBar`, `choice.Segmented`, `field.Select`.
+- `internal/ui/screens/catalog/action_bar.go`: Floating batch action toolbar with Lobe buttons.
+- `internal/ui/screens/catalog/media_card.go`: Single card layout with hover highlights and badges.
 
 ---
 
 ## 5. Acceptance Criteria
-- [ ] Smooth scrolling at 60 FPS across 5,000+ cataloged media items.
-- [ ] Multi-selection behaves identically to standard OS file managers (Ctrl/Shift/Cmd+A).
-- [ ] Batch operations correctly pass IDs to file operations and update the database.
-- [ ] Search and filter operations apply with debouncing and instant response.
+
+- [ ] Smooth 60 FPS scrolling with virtualized `ui.GridView`.
+- [ ] `field.SearchBar` filters items with debounced text matching.
+- [ ] `choice.Segmented` filters Photos vs Videos instantly with sliding animation.
+- [ ] `display.Empty` displays when no items match search criteria.
+- [ ] Right-click triggers `nav.ContextMenu` with functional actions.

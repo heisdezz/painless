@@ -1,6 +1,6 @@
 # Painless Implementation Architecture
 
-This directory contains the feature-by-feature implementation specifications and architecture blueprints for porting **External Drive Media Organizer (d-stream-desktop)** from an Electrobun (Bun + React + DaisyUI) application to **Painless**, a 100% native Go desktop application using [MyGo](https://github.com/egoist/mygo) (`github.com/egoist/mygo/ui`).
+This directory contains the feature-by-feature implementation specifications and architecture blueprints for porting **External Drive Media Organizer (d-stream-desktop)** from an Electrobun (Bun + React + DaisyUI) application to **Painless**, a 100% native Go desktop application using [MyGo](https://github.com/egoist/mygo) (`github.com/egoist/mygo/ui`) and [Lobe MyGo](https://github.com/lobehub/lobe-mygo) (`github.com/lobehub/lobe-mygo`) for GPU-accelerated UI components in pure Go.
 
 ---
 
@@ -10,13 +10,13 @@ Painless uses a modular, layered architecture separating core system logic, pers
 
 ```mermaid
 graph TD
-    subgraph UI ["Native UI Layer (github.com/egoist/mygo/ui)"]
-        Shell[App Shell & Navigation]
-        Catalog[Media Catalog GridView]
-        Albums[Album Gallery & Modals]
-        Viewer[Media Viewer & Video Player]
-        ScannerView[Discover / Stager View]
-        Settings[Settings & Logs View]
+    subgraph UI ["Native UI Layer (MyGo + Lobe MyGo)"]
+        Shell["App Shell & DraggableSideNav (layout.DraggableSideNav)"]
+        Catalog["Media Catalog Grid (field.SearchBar, choice.Segmented, ui.GridView)"]
+        Albums["Album Gallery & Modals (overlay.Modal, display.Tag)"]
+        Viewer["Media Viewer & Video Player (display.Image, feedback.Drawer)"]
+        ScannerView["Discover / Stager View (feedback.Progress, action.Button)"]
+        Settings["Settings & Logs View (nav.Tabs, display.QRCode, action.CopyButton)"]
     end
 
     subgraph State ["App State & Event Coordination"]
@@ -100,20 +100,20 @@ painless/
 │   ├── gdrive/               # Google Drive backup via official Google API SDK
 │   ├── logging/              # Centralized logging engine with level filtering & memory ring buffer
 │   ├── state/                # Application state, selection state, active drive, job tracking
-│   └── ui/                   # Native MyGo UI components and screens
-│       ├── theme/            # Color palettes, typography, spacing tokens
-│       ├── components/       # Reusable native widgets (dialogs, cards, filter bars, search)
+│   └── ui/                   # Native UI components using MyGo & Lobe MyGo
+│       ├── theme/            # Color palettes, typography, spacing tokens (theme.Tokens)
+│       ├── components/       # App-specific widgets (drive gauge, media cards, stat bars)
 │       ├── screens/          # Primary views
-│       │   ├── catalog/      # Media library grid with virtualized GridView
-│       │   ├── albums/       # Album cards & modal dialogs
-│       │   ├── viewer/       # Photo zoom viewer & native video player
-│       │   ├── discover/     # Drive scanner & staged file consolidator
-│       │   └── settings/     # Backups, mobile sync setup, system logs table
-│       └── shell/            # Window setup, sidebar navigation, toast notifications
+│       │   ├── catalog/      # Media library grid with virtualized GridView & SearchBar
+│       │   ├── albums/       # Album cards & Lobe Modals (overlay.Modal)
+│       │   ├── viewer/       # Photo zoom viewer (display.Image) & video player
+│       │   ├── discover/     # Drive scanner & staged file consolidator (feedback.Progress)
+│       │   └── settings/     # Backups, mobile sync (display.QRCode), system logs
+│       └── shell/            # Window setup, DraggableSideNav, Toast notifications
 ├── docs/
 │   ├── implementation/       # Feature blueprints and specs (this directory)
 │   │   ├── logic/            # Backend & service specs
-│   │   ├── ui/               # Native UI specs
+│   │   ├── ui/               # Native UI specs (incorporating lobe-mygo)
 │   │   └── progress.md       # Multi-agent coordination tracker
 │   └── commit.md             # Conventional commit standards
 ├── go.mod
@@ -123,9 +123,26 @@ painless/
 
 ---
 
-## 3. Implementation Plan Index
+## 3. UI Component Foundation: Lobe MyGo
+
+Instead of constructing basic widgets from scratch, Painless leverages **Lobe MyGo** (`github.com/lobehub/lobe-mygo`):
+
+- `pkg/action`: `Button`, `ActionIcon`, `CopyButton`
+- `pkg/choice`: `Segmented`, `Checkbox`, `Radio`
+- `pkg/display`: `Image` (built-in zoom/pan preview viewer), `Empty`, `QRCode`, `Tag`, `Badge`, `SortableList`
+- `pkg/feedback`: `Modal`, `Drawer`, `FloatingPanel`, `Progress`, `Toast`, `Spin`, `Alert`
+- `pkg/field`: `SearchBar`, `Input`, `Select`, `Switch`, `Slider`, `TextArea`
+- `pkg/layout`: `DraggableSideNav`, `Grid`, `ScrollArea`, `Divider`
+- `pkg/lucide`: High-resolution Lucide SVG icons
+- `pkg/nav`: `Tabs`, `Pagination`, `ContextMenu`, `DropdownMenu`
+- `pkg/theme`: Unified design tokens and motion curves
+
+---
+
+## 4. Implementation Plan Index
 
 ### Logic & Backend
+
 1. [01. SQLite Database & Storage Engine](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/01-storage-sqlite.md)
 2. [02. Drive Detection & Removable Storage Management](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/02-drive-management.md)
 3. [03. File Operations, Staging & Album Consolidation](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/03-file-operations-staging.md)
@@ -135,7 +152,8 @@ painless/
 7. [07. Mobile Companion Sync REST & Upload API](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/07-mobile-sync-api.md)
 8. [08. Google Drive Cloud Backup Service](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/08-cloud-backup-gdrive.md)
 
-### Native UI (`mygo/ui`)
+### Native UI (`mygo/ui` + `lobe-mygo`)
+
 1. [01. Application Shell, Navigation & Notifications](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/ui/01-app-shell-navigation.md)
 2. [02. Media Catalog Grid, Virtualization & Selection](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/ui/02-media-catalog-grid.md)
 3. [03. Album Gallery, Detail View & Action Modals](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/ui/03-album-gallery-management.md)
@@ -145,6 +163,6 @@ painless/
 
 ---
 
-## 4. Multi-Agent Coordination
+## 5. Multi-Agent Coordination
 
 All agent tasks, claims, and execution boundaries are coordinated in [progress.md](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/progress.md). Every commit must comply with [commit.md](file:///run/media/destiny/Ventoy/dr_projects/painless/commit.md).

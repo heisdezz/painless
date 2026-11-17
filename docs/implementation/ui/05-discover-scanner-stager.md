@@ -1,52 +1,70 @@
 # UI Feature 05: Discover Scanner View & Staging Consolidator
 
 ## 1. Overview
-The Discover / Scanner view is where the user initiates filesystem indexing of an external drive or specific subfolder, monitors live scan progress, reviews discovered media in the virtual staging area, and commits physical file relocations via the **"Consolidate & Execute"** action.
+
+The Discover / Scanner view is where users initiate filesystem scanning of an external drive or subfolder, watch live scanning progress (`feedback.Progress`), review discovered items in a virtual staging table, and trigger the physical file moves via the **"Consolidate & Execute"** action with modal confirmation (`overlay.Modal`).
 
 ---
 
 ## 2. Views & Sections
 
-### 1. Scanner Control Header (`internal/ui/screens/discover/scan_controls.go`)
-- Target folder picker (`ui.Button("Select Folder")` invoking native file dialog).
-- Ignore list configuration (input tags for folders to skip).
-- Action buttons: "Start Scan", "Pause", "Cancel".
-- Live progress indicator:
-  - Animated progress bar.
-  - Counters: Total files scanned, media files discovered, elapsed time, current processing directory.
+### 1. Scanner Control Bar (`internal/ui/screens/discover/scan_controls.go`)
+
+- Target Folder Selector:
+  - `field.Input` displaying chosen path.
+  - `action.Button` ("Browse Folder...") invoking native file dialog.
+- Ignore List:
+  - `display.Tag` chips displaying ignored folder patterns (`node_modules`, `.git`, etc.) with remove buttons.
+  - `field.Input` to add new ignore patterns.
+- Scan Actions:
+  - `action.Button`: "Start Scan" (Primary, `lucide.Play`)
+  - `action.Button`: "Pause" (`lucide.Pause`)
+  - `action.Button`: "Cancel" (Danger, `lucide.Square`)
+- Live Progress Indicator:
+  - `github.com/lobehub/lobe-mygo/pkg/feedback.Progress`: Animated line showing percentage progress with moving shine.
+  - Stat counters (`display.Tag`): Scanned files count, media discovered count, elapsed time.
+  - Current processing directory displayed with ellipsis truncation.
 
 ### 2. Virtual Staging Review Table (`internal/ui/screens/discover/staging_table.go`)
-- Displays all newly discovered media files before they are physically moved.
+
+- Shows discovered media files staged for disk reorganization.
 - Columns:
-  - Thumbnail preview.
-  - File Name & Path.
-  - Size & Type.
-  - Target Assignment Dropdown: Assign to `[Album Name]`, `[Unknown]`, or `[Skip / Ignore]`.
-- Batch assign buttons: "Assign all to Album...", "Send all unassigned to Unknown".
+  - Preview thumbnail (`ui.Image`).
+  - File Name & Original Path.
+  - File Size & Type (`display.Tag`).
+  - Target Assignment Dropdown (`field.Select`):
+    - Assign to `[Album Name]`
+    - Assign to `[Unknown / Unorganized]`
+    - Skip / Do Not Move
+- Batch action toolbar:
+  - `action.Button`: "Assign All to Album..."
+  - `action.Button`: "Send All to Unknown"
 
 ### 3. Consolidate & Execute Action Panel (`internal/ui/screens/discover/execute_panel.go`)
-- Prominent bottom banner summarizing staged actions:
-  - *"45 files will be moved to albums/Vacation 2026"*
-  - *"12 files will be moved to unknown/"*
-  - *"0 files will be overwritten"*
-- Action Button: **"Consolidate & Execute"** (Primary accent styling).
-- Confirmation Modal:
-  - Details the exact disk modifications about to occur.
-  - Requires user click on "Confirm & Write to Disk".
-  - Shows execution progress bar with cancel/abort protection.
+
+- Floating bottom banner summarizing staged actions:
+  - `feedback.Alert`: Summary of files to move, directories to create, and unknown fallback counts.
+  - `action.Button`: **"Consolidate & Execute"** (Primary accent, `lucide.CheckCircle2`).
+- Confirmation Modal (`overlay.Modal`):
+  - Frosted backdrop dialog displaying detailed file move breakdown.
+  - Warning that physical file moves will be written to disk.
+  - Requires clicking "Confirm & Move Files".
+  - Shows live execution progress bar (`feedback.Progress`) during transfer.
 
 ---
 
 ## 3. File Structure
-- `internal/ui/screens/discover/discover_screen.go`: Main discover screen container.
-- `internal/ui/screens/discover/scan_controls.go`: Scan trigger, folder selector, live status bar.
-- `internal/ui/screens/discover/staging_table.go`: Staged media review and assignment table.
-- `internal/ui/screens/discover/execute_panel.go`: Summary banner and execution confirmation modal.
+
+- `internal/ui/screens/discover/discover_screen.go`: Main container view.
+- `internal/ui/screens/discover/scan_controls.go`: Target path picker and `feedback.Progress`.
+- `internal/ui/screens/discover/staging_table.go`: Virtual staging review table with `field.Select`.
+- `internal/ui/screens/discover/execute_panel.go`: Summary alert and `overlay.Modal` confirmation.
 
 ---
 
 ## 4. Acceptance Criteria
-- [ ] Folder picker opens native directory selection dialog.
-- [ ] Scanning shows real-time progress without freezing the UI.
-- [ ] Staging table allows assigning destination albums to discovered media.
-- [ ] "Consolidate & Execute" executes file moves with live progress feedback and summary report.
+
+- [ ] Folder picker opens native dialog and updates target path.
+- [ ] Scanning displays real-time `feedback.Progress` bar and file counters.
+- [ ] Staging table allows assigning destination albums via `field.Select`.
+- [ ] "Consolidate & Execute" presents confirmation `overlay.Modal` and commits moves to disk.
