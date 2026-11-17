@@ -1,9 +1,12 @@
 package shell
 
 import (
+	"context"
+
 	"github.com/egoist/mygo"
 	mui "github.com/egoist/mygo/ui"
 
+	"painless/internal/drive"
 	"painless/internal/state"
 	uibridge "painless/internal/ui"
 )
@@ -24,16 +27,37 @@ func (s *Shell) WindowOptions() mygo.WindowOptions {
 	}
 }
 
-// Open creates the main window, its state store and the event bridge. Call
-// from mygo.App.WhenReady. The returned cancel hook is wired to OnClosed.
+// Open creates the main window, its state store, the drive monitor and the
+// event bridge. Call from mygo.App.WhenReady. Scans seed the store before the
+// first frame; monitor events and the Refresh button rescan on demand.
 func Open() *mygo.Window {
 	store := state.NewStore()
 	shell := New(store)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	drives := drive.NewService()
+	monitor := drive.NewMonitor(drives, drive.DefaultPollInterval)
+	controller := newDriveController(store, drives, shell.toaster, monitor.Events())
+	shell.attachDrives(controller)
+
+	library := newLibraryController(store, shell)
 	win := mygo.NewWindow(shell.WindowOptions())
+	library.update = win.Update
 	bridge := uibridge.NewBridge(win, func(event state.Event) {
 		shell.toaster.HandleEvent(event)
+		library.HandleEvent(event)
 	})
-	cancel := bridge.Start(store)
-	win.OnClosed(func() { cancel() })
+	cancelBridge := bridge.Start(store)
+
+	monitor.Start(ctx)
+	controller.Start(ctx)
+	library.sync()
+
+	win.OnClosed(func() {
+		cancel()
+		monitor.Stop()
+		library.Close()
+		cancelBridge()
+	})
 	return win
 }

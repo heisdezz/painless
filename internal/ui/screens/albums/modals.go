@@ -19,7 +19,7 @@ import (
 )
 
 func (s *Screen) createModal(c *mui.Context, tk *lobetheme.Tokens) {
-	if !s.createOpen {
+	if s.readOnly || !s.createOpen {
 		return
 	}
 
@@ -91,7 +91,7 @@ func (s *Screen) createModal(c *mui.Context, tk *lobetheme.Tokens) {
 }
 
 func (s *Screen) editModal(c *mui.Context, tk *lobetheme.Tokens) {
-	if !s.editOpen || s.editTarget == nil {
+	if s.readOnly || !s.editOpen || s.editTarget == nil {
 		return
 	}
 
@@ -169,7 +169,7 @@ func (s *Screen) editModal(c *mui.Context, tk *lobetheme.Tokens) {
 }
 
 func (s *Screen) deleteModal(c *mui.Context, tk *lobetheme.Tokens) {
-	if !s.deleteOpen || s.deleteTarget == nil {
+	if s.readOnly || !s.deleteOpen || s.deleteTarget == nil {
 		return
 	}
 
@@ -191,11 +191,11 @@ func (s *Screen) deleteModal(c *mui.Context, tk *lobetheme.Tokens) {
 			mui.Text(c, "Select Deletion Policy:").FontSize(12).FontWeight(600).TextColor(tk.TextSecondary)
 
 			choice.Radio(c, &s.deleteMode, "soft", "Keep media files (Soft delete)", choice.RadioProps{})
-			mui.Text(c, "Disassociates files from the album. Files will remain safe in unknown/.").
+			mui.Text(c, "Removes the album assignment. Files stay where they are.").
 				FontSize(11).TextColor(tk.TextTertiary).Padding(0, 24)
 
 			choice.Radio(c, &s.deleteMode, "permanent", "Delete media permanently", choice.RadioProps{})
-			mui.Text(c, "Permanently removes both database records and physical files.").
+			mui.Text(c, "Removes the media records from the catalog. Files stay on the drive.").
 				FontSize(11).TextColor(tk.Error).Padding(0, 24)
 
 			if s.deleteErr != "" {
@@ -237,7 +237,7 @@ func (s *Screen) deleteModal(c *mui.Context, tk *lobetheme.Tokens) {
 }
 
 func (s *Screen) mergeModal(c *mui.Context, tk *lobetheme.Tokens) {
-	if !s.mergeOpen || s.mergeSource == nil {
+	if s.readOnly || !s.mergeOpen || s.mergeSource == nil {
 		return
 	}
 

@@ -61,6 +61,8 @@ type Options struct {
 	MediaStore     fileops.MediaStore
 	AlbumStore     fileops.AlbumStore
 	RefreshWindow  func()
+	Update         func(func()) // Dispatches worker results to the UI thread.
+	DriveRoot      string
 }
 
 // Screen coordinates the scanner, staging table, and consolidation modal.
@@ -72,6 +74,12 @@ type Screen struct {
 	mediaStore     fileops.MediaStore
 	albumStore     fileops.AlbumStore
 	refreshWindow  func()
+	update         func(func())
+	driveRoot      string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	jobs           sync.WaitGroup
+	closed         bool
 
 	// Scanner state
 	targetPath  string
@@ -108,7 +116,13 @@ func New(opts Options) *Screen {
 		stager = fileops.NewStagingEngine()
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Screen{
+		ctx:            ctx,
+		cancel:         cancel,
+		update:         opts.Update,
+		driveRoot:      opts.DriveRoot,
+		targetPath:     opts.DriveRoot,
 		store:          opts.Store,
 		stager:         stager,
 		scannerFactory: opts.ScannerFactory,
@@ -127,8 +141,6 @@ func (s *Screen) View(c *mui.Context) {
 	uitheme.Apply(c)
 	tk := lobetheme.TokensOf(c)
 
-	s.refreshStagedData()
-
 	container := mui.Column(c).Fill().Padding(20, 24).Gap(16)
 	container.Children(func() {
 		// 1. Scanner controls & live progress bar
@@ -136,7 +148,9 @@ func (s *Screen) View(c *mui.Context) {
 
 		// 2. Virtual staging review table
 		mui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
-			s.stagingTable(c, tk)
+			if !s.isExecuting {
+				s.stagingTable(c, tk)
+			}
 		})
 
 		// 3. Consolidate & execute action banner
@@ -147,17 +161,12 @@ func (s *Screen) View(c *mui.Context) {
 	})
 }
 
-func (s *Screen) refreshStagedData() {
+// ReloadAlbums refreshes the destination list on the UI thread.
+func (s *Screen) ReloadAlbums() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.stager != nil {
-		s.stagedOps = s.stager.ListOperations()
-		s.summary = s.stager.Summary()
-	}
-
-	// Load albums if empty and albumSource present
-	if len(s.albums) == 0 && s.albumSource != nil {
-		if summaries, err := s.albumSource.List(context.Background()); err == nil {
+	if !s.closed && s.albumSource != nil {
+		if summaries, err := s.albumSource.List(s.ctx); err == nil {
 			s.albums = make([]string, 0, len(summaries))
 			s.albumMap = make(map[string]int64, len(summaries))
 			for _, sum := range summaries {
@@ -166,6 +175,65 @@ func (s *Screen) refreshStagedData() {
 			}
 		}
 	}
+}
+
+// Close cancels jobs and prevents queued results from updating this screen.
+// The returned channel closes when workers no longer need the drive services.
+func (s *Screen) Close() <-chan struct{} {
+	s.mu.Lock()
+	s.closed = true
+	s.cancel()
+	scan := s.activeScan
+	s.mu.Unlock()
+	if scan != nil {
+		scan.Stop() // Wake a paused scanner as well as canceling its context.
+	}
+	done := make(chan struct{})
+	go func() {
+		s.jobs.Wait()
+		close(done)
+	}()
+	return done
+}
+
+func (s *Screen) publish(apply func()) {
+	update := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if !s.closed {
+			apply()
+		}
+	}
+	if s.update != nil {
+		s.update(update)
+	} else {
+		update()
+	}
+}
+
+// QueueDiscovered adds committed scan results to virtual staging, not to disk.
+func (s *Screen) QueueDiscovered(items []domain.MediaItem) {
+	s.publish(func() {
+		for _, item := range items {
+			s.stager.StageUnknown(item)
+		}
+		s.stagedOps = s.stager.ListOperations()
+		s.summary = s.stager.Summary()
+		if len(items) > 0 && s.store != nil {
+			s.store.MediaChanged("")
+		}
+	})
+}
+
+// StageDeletion queues catalog items for physical deletion on the active drive.
+func (s *Screen) StageDeletion(items []domain.MediaItem) {
+	s.publish(func() {
+		for _, item := range items {
+			s.stager.StageDelete(item)
+		}
+		s.stagedOps = s.stager.ListOperations()
+		s.summary = s.stager.Summary()
+	})
 }
 
 func (s *Screen) requestRedraw() {
@@ -206,7 +274,7 @@ func (s *Screen) StagedCount() int {
 func (s *Screen) StageItem(item domain.MediaItem, albumName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.stager == nil {
+	if s.closed || s.isExecuting {
 		return
 	}
 	if albumName != "" {
@@ -226,7 +294,7 @@ func (s *Screen) StageItem(item domain.MediaItem, albumName string) {
 func (s *Screen) ClearStaging() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.stager != nil {
+	if !s.closed && !s.isExecuting {
 		s.stager.Clear()
 		s.stagedOps = nil
 		s.summary = domain.StagingSummary{}

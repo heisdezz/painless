@@ -167,6 +167,7 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 		return fmt.Errorf("scanner is already running")
 	}
 	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
 	s.cancelFn = cancel
 	s.running = true
 	s.paused = false
@@ -282,7 +283,7 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 			return nil
 		}
 
-		if ShouldIgnoreFile(d.Name()) {
+		if !d.Type().IsRegular() || ShouldIgnoreFile(d.Name()) {
 			return nil
 		}
 

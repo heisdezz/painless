@@ -36,17 +36,37 @@ func (t *Toaster) Show(message ToastMessage) {
 	t.pending = append(t.pending, message)
 }
 
+// Toast hints keep the exact Lobe toast tint across the bus: LogLevel has
+// no success value, so the level alone would turn a success into an info.
+const (
+	toastHintInfo    = "info"
+	toastHintSuccess = "success"
+	toastHintWarn    = "warn"
+	toastHintError   = "error"
+)
+
 // Publish notifies the app from any goroutine. The window bridge delivers
 // the matching event back on the UI thread, where HandleEvent queues it.
 func (t *Toaster) Publish(message ToastMessage) {
 	level := domain.LogLevelInfo
+	hint := toastHintInfo
 	switch message.Type {
+	case feedback.ToastSuccess:
+		hint = toastHintSuccess
 	case feedback.ToastWarning:
-		level = domain.LogLevelWarn
+		level, hint = domain.LogLevelWarn, toastHintWarn
 	case feedback.ToastError:
-		level = domain.LogLevelError
+		level, hint = domain.LogLevelError, toastHintError
 	}
-	t.store.Notify(level, message.Title, message.Description)
+	t.store.Bus.Publish(state.Event{
+		Kind:   state.EventToast,
+		Detail: hint,
+		Toast: &state.Toast{
+			Level: level,
+			Title: message.Title,
+			Body:  message.Description,
+		},
+	})
 }
 
 // HandleEvent applies a toast event delivered by the window bridge. Call
@@ -55,11 +75,30 @@ func (t *Toaster) HandleEvent(event state.Event) {
 	if event.Kind != state.EventToast || event.Toast == nil {
 		return
 	}
+	toastType, ok := toastTypeFromHint(event.Detail)
+	if !ok {
+		toastType = toastTypeFor(event.Toast.Level)
+	}
 	t.Show(ToastMessage{
 		Title:       event.Toast.Title,
 		Description: event.Toast.Body,
-		Type:        toastTypeFor(event.Toast.Level),
+		Type:        toastType,
 	})
+}
+
+func toastTypeFromHint(hint string) (feedback.ToastType, bool) {
+	switch hint {
+	case toastHintSuccess:
+		return feedback.ToastSuccess, true
+	case toastHintWarn:
+		return feedback.ToastWarning, true
+	case toastHintError:
+		return feedback.ToastError, true
+	case toastHintInfo:
+		return feedback.ToastInfo, true
+	default:
+		return feedback.ToastDefault, false
+	}
 }
 
 func toastTypeFor(level domain.LogLevel) feedback.ToastType {

@@ -1,0 +1,100 @@
+package shell
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/lobehub/lobe-mygo/pkg/feedback"
+
+	"painless/internal/domain"
+	"painless/internal/state"
+)
+
+// driveLister is the part of the drive service the shell needs. A fake can
+// stand in for it in tests.
+type driveLister interface {
+	ListDrives(context.Context) ([]domain.DriveInfo, error)
+}
+
+// driveController bridges the drive service and its monitor to the central
+// store. Scans run off the UI thread; the store publishes bus events that
+// the window bridge turns into redraws.
+type driveController struct {
+	store   *state.Store
+	lister  driveLister
+	toaster *Toaster
+	events  <-chan domain.DriveEvent
+	ctx     context.Context
+}
+
+func newDriveController(store *state.Store, lister driveLister, toaster *Toaster, events <-chan domain.DriveEvent) *driveController {
+	return &driveController{store: store, lister: lister, toaster: toaster, events: events}
+}
+
+// scan replaces the store's drive list. Safe from any goroutine.
+func (c *driveController) scan(ctx context.Context) (int, error) {
+	drives, err := c.lister.ListDrives(ctx)
+	if err != nil {
+		return 0, err
+	}
+	c.store.ApplyDrives(drives)
+	return len(drives), nil
+}
+
+// Refresh is the action behind the Refresh button. It must be called on the
+// UI thread; the actual scan is posted to a worker so input never blocks.
+func (c *driveController) Refresh(ctx context.Context) {
+	if c.ctx != nil {
+		ctx = c.ctx
+	}
+	c.toaster.Show(ToastMessage{
+		Title:       "Scanning for drives",
+		Description: "Looking for removable volumes",
+		Type:        feedback.ToastLoading,
+	})
+	go func() {
+		count, err := c.scan(ctx)
+		if err != nil {
+			c.toaster.Publish(ToastMessage{
+				Title: "Drive scan failed", Description: err.Error(), Type: feedback.ToastError,
+			})
+			return
+		}
+		c.toaster.Publish(ToastMessage{
+			Title:       "Drive scan complete",
+			Description: fmt.Sprintf("%d drive(s) available", count),
+			Type:        feedback.ToastSuccess,
+		})
+	}()
+}
+
+// Start seeds the store with the drives present right now and then watches
+// monitor events for insertions and removals until ctx is cancelled.
+func (c *driveController) Start(ctx context.Context) {
+	c.ctx = ctx
+	if _, err := c.scan(ctx); err != nil {
+		c.toaster.Publish(ToastMessage{
+			Title: "Drive scan failed", Description: err.Error(), Type: feedback.ToastError,
+		})
+	}
+	if c.events == nil {
+		return
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-c.events:
+				if !ok {
+					return
+				}
+				if _, err := c.scan(ctx); err != nil {
+					c.toaster.Publish(ToastMessage{
+						Title: "Drive scan failed", Description: err.Error(), Type: feedback.ToastError,
+					})
+				}
+			}
+		}
+	}()
+}

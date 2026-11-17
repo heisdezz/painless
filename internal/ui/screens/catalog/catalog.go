@@ -131,7 +131,9 @@ func (s *Screen) View(c *mui.Context) {
 	s.services = c.Services()
 	s.syncSearch()
 	s.load()
-	mui.Column(c).Fill().Gap(12).Children(func() {
+	// Match the 28 DIP horizontal padding of the shell's screen heading so
+	// the filter bar and grid line up with the title and keep off the edges.
+	mui.Column(c).Fill().Padding(0, 28, 24).Gap(12).Children(func() {
 		s.filterBar(c)
 		s.gridView(c)
 		s.actionBar(c)
@@ -190,6 +192,9 @@ func (s *Screen) load() {
 		s.selected = -1
 	}
 }
+
+// Reload invalidates the cached page after an active library mutation.
+func (s *Screen) Reload() { s.loadedFor = "" }
 
 // SelectedIDs returns the IDs chosen in the grid.
 func (s *Screen) SelectedIDs() []int64 {

@@ -2,6 +2,8 @@ package discover
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -140,8 +142,76 @@ func TestDiscoverScreen_ScannerControls(t *testing.T) {
 
 	// Stop
 	screen.stopScan()
+	deadline := time.Now().Add(time.Second)
+	for screen.IsScanning() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if screen.IsScanning() {
-		t.Errorf("expected isScanning=false after stopScan")
+		t.Fatal("scan did not finish after Stop")
+	}
+}
+
+func TestDiscoverScreen_QueueDiscoveredStagesWithoutExecuting(t *testing.T) {
+	screen := New(Options{})
+	screen.QueueDiscovered([]domain.MediaItem{
+		{ID: 1, FileHash: "a", CurrentRelativePath: "in/one.jpg"},
+		{ID: 2, FileHash: "b", CurrentRelativePath: "in/two.jpg"},
+	})
+	if screen.StagedCount() != 2 {
+		t.Fatalf("staged = %d, want 2", screen.StagedCount())
+	}
+	for _, op := range screen.stager.ListOperations() {
+		if op.Action != domain.StageActionMove || op.TargetAlbumName != "" {
+			t.Fatalf("queued op = %+v, want an unknown move", op)
+		}
+	}
+}
+
+func TestDiscoverScreen_CloseStopsScan(t *testing.T) {
+	mScanner := &mockScanner{}
+	screen := New(Options{
+		ScannerFactory: func(scanner.Config, func(scanner.Progress)) Scanner { return mScanner },
+	})
+	screen.SetTargetPath(t.TempDir())
+	screen.startScan()
+
+	screen.Close()
+	for i := 0; i < 100; i++ {
+		mScanner.mu.Lock()
+		stopped := mScanner.stopped
+		mScanner.mu.Unlock()
+		if stopped {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	mScanner.mu.Lock()
+	defer mScanner.mu.Unlock()
+	if !mScanner.stopped {
+		t.Fatal("closing the screen did not stop the scanner")
+	}
+}
+
+func TestDiscoverScreen_RejectsPathOutsideDrive(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+
+	screen := New(Options{
+		DriveRoot:      root,
+		ScannerFactory: func(scanner.Config, func(scanner.Progress)) Scanner { return &mockScanner{} },
+	})
+	screen.SetTargetPath(outside)
+	screen.startScan()
+	if screen.lastScanErr == "" {
+		t.Fatalf("scan err = %q, want an outside-drive error", screen.lastScanErr)
+	}
+
+	inside := filepath.Join(root, "photos")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := scanDirectory(root, inside)
+	if err != nil || got != inside {
+		t.Fatalf("scanDirectory(%q) = %q, %v", inside, got, err)
 	}
 }
 
@@ -150,7 +220,7 @@ func TestDiscoverScreen_ConsolidationExecution(t *testing.T) {
 	screen := New(Options{
 		Stager: stager,
 	})
-	screen.SetTargetPath("/tmp/drive")
+	screen.SetTargetPath(t.TempDir())
 
 	item := domain.MediaItem{
 		ID:                  201,

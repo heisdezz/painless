@@ -31,26 +31,28 @@ func (s *Screen) detailView(c *mui.Context, tk *lobetheme.Tokens) {
 
 			mui.Box(c).Grow(1)
 
-			action.Button(c, "Edit Album", action.ButtonProps{
-				Variant: action.Default,
-				Size:    lobetheme.Small,
-			}).OnClick(func() {
-				s.openEditModal(album)
-			})
+			if !s.readOnly {
+				action.Button(c, "Edit Album", action.ButtonProps{
+					Variant: action.Default,
+					Size:    lobetheme.Small,
+				}).OnClick(func() {
+					s.openEditModal(album)
+				})
 
-			action.Button(c, "Merge Into...", action.ButtonProps{
-				Variant: action.Default,
-				Size:    lobetheme.Small,
-			}).OnClick(func() {
-				s.openMergeModal(album)
-			})
+				action.Button(c, "Merge Into...", action.ButtonProps{
+					Variant: action.Default,
+					Size:    lobetheme.Small,
+				}).OnClick(func() {
+					s.openMergeModal(album)
+				})
 
-			action.Button(c, "Delete Album", action.ButtonProps{
-				Variant: action.Default,
-				Size:    lobetheme.Small,
-			}).OnClick(func() {
-				s.openDeleteModal(album)
-			})
+				action.Button(c, "Delete Album", action.ButtonProps{
+					Variant: action.Default,
+					Size:    lobetheme.Small,
+				}).OnClick(func() {
+					s.openDeleteModal(album)
+				})
+			}
 		})
 
 		// 2. Album Banner

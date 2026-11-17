@@ -1,7 +1,6 @@
 package discover
 
 import (
-	"context"
 	"fmt"
 
 	mui "github.com/egoist/mygo/ui"
@@ -13,7 +12,7 @@ import (
 )
 
 func (s *Screen) executePanel(c *mui.Context, tk *lobetheme.Tokens) {
-	if len(s.stagedOps) == 0 {
+	if len(s.stagedOps) == 0 || s.isExecuting {
 		return
 	}
 
@@ -41,7 +40,7 @@ func (s *Screen) executePanel(c *mui.Context, tk *lobetheme.Tokens) {
 		action.Button(c, "Consolidate & Execute", action.ButtonProps{
 			Variant: action.Primary,
 			Size:    lobetheme.Middle,
-		}).OnClick(func() {
+		}).Disabled(s.isScanning).OnClick(func() {
 			s.mu.Lock()
 			s.modalOpen = true
 			s.isExecuting = false
@@ -145,7 +144,7 @@ func (s *Screen) confirmModal(c *mui.Context, tk *lobetheme.Tokens) {
 
 func (s *Screen) runConsolidation() {
 	s.mu.Lock()
-	if s.isExecuting {
+	if s.closed || s.isExecuting || s.isScanning || len(s.stagedOps) == 0 {
 		s.mu.Unlock()
 		return
 	}
@@ -155,36 +154,40 @@ func (s *Screen) runConsolidation() {
 	s.execTotal = len(s.stagedOps)
 	s.execErr = ""
 
-	driveRoot := s.targetPath
-	if driveRoot == "" && s.store != nil {
-		if d, ok := s.store.State.ActiveDrive(); ok {
-			driveRoot = d.Path
-		}
+	driveRoot := s.driveRoot
+	if driveRoot == "" {
+		driveRoot = s.targetPath
 	}
+	s.jobs.Add(1)
 	s.mu.Unlock()
 
 	go func() {
-		ctx := context.Background()
-		report, err := s.stager.Execute(ctx, driveRoot, s.mediaStore, s.albumStore, func(cur, tot int, op domain.StagedOperation) {
-			s.mu.Lock()
-			s.execCurrent = cur
-			s.execTotal = tot
-			s.mu.Unlock()
-			s.requestRedraw()
+		defer s.jobs.Done()
+		report, err := s.stager.Execute(s.ctx, driveRoot, s.mediaStore, s.albumStore, func(cur, tot int, _ domain.StagedOperation) {
+			s.publish(func() {
+				s.execCurrent = cur
+				s.execTotal = tot
+			})
 		})
 
-		s.mu.Lock()
-		s.isExecuting = false
-		s.execFinished = true
-		s.execReport = report
-		if err != nil {
-			s.execErr = err.Error()
-		} else {
-			// Clear staging upon success
-			s.stagedOps = nil
-			s.summary = domain.StagingSummary{}
-		}
-		s.mu.Unlock()
-		s.requestRedraw()
+		s.publish(func() {
+			s.isExecuting = false
+			s.execFinished = true
+			s.execReport = report
+			if err != nil {
+				s.execErr = err.Error()
+			}
+			// Completed moves must not be replayed. Leave failed items queued.
+			for _, op := range s.stager.ListOperations() {
+				if op.Status == domain.StageStatusDone {
+					s.stager.Unstage(op.MediaID)
+				}
+			}
+			s.stagedOps = s.stager.ListOperations()
+			s.summary = s.stager.Summary()
+			if s.store != nil {
+				s.store.MediaChanged("")
+			}
+		})
 	}()
 }

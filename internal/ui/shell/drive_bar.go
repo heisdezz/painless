@@ -19,11 +19,8 @@ func (s *Shell) topBar(c *mui.Context, tk *lobetheme.Tokens) {
 			Size:  lobetheme.Small,
 			Title: "Refresh drives",
 		})
-		if refresh.Clicked() {
-			s.toaster.Info("Scanning for drives", "Looking for removable volumes")
-			if s.refresh != nil {
-				s.refresh()
-			}
+		if refresh.Clicked() && s.refresh != nil {
+			s.refresh()
 		}
 	})
 }

@@ -22,6 +22,23 @@ func NewMediaRepo(db *DB) *MediaRepo {
 
 // InsertBatch inserts multiple media records in a single transactional batch.
 func (r *MediaRepo) InsertBatch(ctx context.Context, items []domain.MediaItem) (int, error) {
+	return r.insertBatch(ctx, items, nil)
+}
+
+// InsertScanBatch returns the committed items with their database IDs so they
+// can be queued for review without a second lookup.
+func (r *MediaRepo) InsertScanBatch(ctx context.Context, items []domain.MediaItem) ([]domain.MediaItem, error) {
+	inserted := make([]domain.MediaItem, 0, len(items))
+	_, err := r.insertBatch(ctx, items, func(item domain.MediaItem) {
+		inserted = append(inserted, item)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return inserted, nil
+}
+
+func (r *MediaRepo) insertBatch(ctx context.Context, items []domain.MediaItem, collect func(domain.MediaItem)) (int, error) {
 	if len(items) == 0 {
 		return 0, nil
 	}
@@ -47,7 +64,7 @@ func (r *MediaRepo) InsertBatch(ctx context.Context, items []domain.MediaItem) (
 				createdAt = time.Now().UTC()
 			}
 
-			_, err := stmt.ExecContext(
+			result, err := stmt.ExecContext(
 				ctx,
 				item.FileHash,
 				item.OriginalRelativePath,
@@ -61,6 +78,13 @@ func (r *MediaRepo) InsertBatch(ctx context.Context, items []domain.MediaItem) (
 			)
 			if err != nil {
 				return err
+			}
+			if collect != nil {
+				item.ID, err = result.LastInsertId()
+				if err != nil {
+					return err
+				}
+				collect(item)
 			}
 			inserted++
 		}
@@ -268,7 +292,7 @@ func (r *MediaRepo) List(ctx context.Context, params domain.MediaListParams) (*d
 }
 
 // MoveToAlbum assigns multiple media items to a target album.
-func (r *MediaRepo) MoveToAlbum(ctx context.Context, mediaIDs []int64, targetAlbumID int64) (int64, error) {
+func (r *MediaRepo) MoveToAlbum(ctx context.Context, targetAlbumID int64, mediaIDs []int64) (int64, error) {
 	if len(mediaIDs) == 0 {
 		return 0, nil
 	}

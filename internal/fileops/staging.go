@@ -206,6 +206,9 @@ func (e *StagingEngine) Execute(
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := ScaffoldLibrary(driveRoot); err != nil {
 		return nil, fmt.Errorf("scaffolding drive failed: %w", err)
 	}

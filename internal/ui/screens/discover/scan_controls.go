@@ -2,8 +2,11 @@ package discover
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"time"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
@@ -30,7 +33,7 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 				action.Button(c, "Start Scan", action.ButtonProps{
 					Variant: action.Primary,
 					Size:    lobetheme.Small,
-				}).OnClick(func() {
+				}).Disabled(s.scannerFactory == nil || s.isExecuting).OnClick(func() {
 					s.startScan()
 				})
 			} else {
@@ -111,7 +114,7 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 
 func (s *Screen) startScan() {
 	s.mu.Lock()
-	if s.isScanning {
+	if s.closed || s.isScanning || s.isExecuting || s.scannerFactory == nil {
 		s.mu.Unlock()
 		return
 	}
@@ -129,68 +132,105 @@ func (s *Screen) startScan() {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	root := s.driveRoot
+	if root == "" {
+		root = target
+	} else {
+		var err error
+		target, err = scanDirectory(root, target)
+		if err != nil {
+			s.lastScanErr = err.Error()
+			s.mu.Unlock()
+			s.requestRedraw()
+			return
+		}
+	}
+	ctx, cancel := context.WithCancel(s.ctx)
 	s.scanCancel = cancel
 	s.isScanning = true
 	s.isPaused = false
 	s.lastScanErr = ""
 	s.scanProg = scanner.Progress{IsRunning: true}
 
-	var sc Scanner
-	if s.scannerFactory != nil {
-		sc = s.scannerFactory(scanner.Config{
-			DriveRoot: target,
-			TargetDir: target,
-		}, func(p scanner.Progress) {
-			s.mu.Lock()
-			s.scanProg = p
-			s.mu.Unlock()
-			s.requestRedraw()
-		})
-	}
+	var lastProgress time.Time
+	sc := s.scannerFactory(scanner.Config{DriveRoot: root, TargetDir: target}, func(p scanner.Progress) {
+		// A scan can report once per file; don't flood the window queue.
+		if p.IsRunning && time.Since(lastProgress) < 50*time.Millisecond {
+			return
+		}
+		lastProgress = time.Now()
+		s.publish(func() { s.scanProg = p })
+	})
 	s.activeScan = sc
+	s.jobs.Add(1)
 	s.mu.Unlock()
 
 	go func() {
-		defer func() {
-			s.mu.Lock()
+		defer s.jobs.Done()
+		err := sc.Scan(ctx)
+		stopped := ctx.Err() != nil
+		cancel()
+		s.publish(func() {
 			s.isScanning = false
 			s.isPaused = false
 			s.activeScan = nil
-			s.mu.Unlock()
-			s.requestRedraw()
-		}()
-
-		if sc != nil {
-			if err := sc.Scan(ctx); err != nil && err != context.Canceled {
-				s.mu.Lock()
+			s.scanCancel = nil
+			if err != nil && !stopped {
 				s.lastScanErr = fmt.Sprintf("Scan failed: %v", err)
-				s.mu.Unlock()
 			}
-		}
+		})
 	}()
 
 	s.requestRedraw()
 }
 
+func scanDirectory(root, target string) (string, error) {
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("Cannot open the active drive: %w", err)
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(root, target)
+	}
+	canonicalTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return "", fmt.Errorf("Cannot open scan folder: %w", err)
+	}
+	rel, err := filepath.Rel(canonicalRoot, canonicalTarget)
+	if err != nil || (rel != "." && !filepath.IsLocal(rel)) {
+		return "", errors.New("Choose a scan folder inside the active drive.")
+	}
+	info, err := os.Stat(canonicalTarget)
+	if err != nil || !info.IsDir() {
+		return "", errors.New("Choose an existing directory to scan.")
+	}
+	return filepath.Join(root, rel), nil
+}
+
 func (s *Screen) pauseScan() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.activeScan != nil && !s.isPaused {
-		s.activeScan.Pause()
+	scan := s.activeScan
+	pause := scan != nil && !s.isPaused && s.scanCancel != nil
+	if pause {
 		s.isPaused = true
-		s.scanProg.IsPaused = true
+	}
+	s.mu.Unlock()
+	if pause {
+		scan.Pause()
 	}
 	s.requestRedraw()
 }
 
 func (s *Screen) resumeScan() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.activeScan != nil && s.isPaused {
-		s.activeScan.Resume()
+	scan := s.activeScan
+	resume := scan != nil && s.isPaused && s.scanCancel != nil
+	if resume {
 		s.isPaused = false
-		s.scanProg.IsPaused = false
+	}
+	s.mu.Unlock()
+	if resume {
+		scan.Resume()
 	}
 	s.requestRedraw()
 }
@@ -200,11 +240,12 @@ func (s *Screen) stopScan() {
 	if s.scanCancel != nil {
 		s.scanCancel()
 	}
-	if s.activeScan != nil {
-		s.activeScan.Stop()
-	}
-	s.isScanning = false
+	scan := s.activeScan
+	s.scanCancel = nil
 	s.isPaused = false
 	s.mu.Unlock()
+	if scan != nil {
+		scan.Stop()
+	}
 	s.requestRedraw()
 }

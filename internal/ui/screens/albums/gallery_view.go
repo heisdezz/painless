@@ -27,14 +27,8 @@ func (s *Screen) galleryView(c *mui.Context, tk *lobetheme.Tokens) {
 		action.Button(c, "New Album", action.ButtonProps{
 			Variant: action.Primary,
 			Size:    lobetheme.Small,
-		}).OnClick(func() {
-			s.mu.Lock()
-			s.createOpen = true
-			s.createName = ""
-			s.createDesc = ""
-			s.createErr = ""
-			s.mu.Unlock()
-			s.requestRedraw()
+		}).Disabled(s.readOnly).OnClick(func() {
+			s.openCreateModal()
 		})
 	})
 
@@ -53,14 +47,8 @@ func (s *Screen) galleryView(c *mui.Context, tk *lobetheme.Tokens) {
 				action.Button(c, "Create Your First Album", action.ButtonProps{
 					Variant: action.Primary,
 					Size:    lobetheme.Middle,
-				}).OnClick(func() {
-					s.mu.Lock()
-					s.createOpen = true
-					s.createName = ""
-					s.createDesc = ""
-					s.createErr = ""
-					s.mu.Unlock()
-					s.requestRedraw()
+				}).Disabled(s.readOnly).OnClick(func() {
+					s.openCreateModal()
 				})
 			})
 		})
@@ -75,6 +63,16 @@ func (s *Screen) galleryView(c *mui.Context, tk *lobetheme.Tokens) {
 			}
 		})
 	})
+}
+
+func (s *Screen) openCreateModal() {
+	s.mu.Lock()
+	s.createOpen = true
+	s.createName = ""
+	s.createDesc = ""
+	s.createErr = ""
+	s.mu.Unlock()
+	s.requestRedraw()
 }
 
 func (s *Screen) albumCard(c *mui.Context, tk *lobetheme.Tokens, sum domain.AlbumSummary) {
@@ -120,6 +118,10 @@ func (s *Screen) albumCard(c *mui.Context, tk *lobetheme.Tokens, sum domain.Albu
 				})
 
 				mui.Box(c).Grow(1)
+
+				if s.readOnly {
+					return
+				}
 
 				// Edit button
 				action.ActionIcon(c, lucide.Pencil(), action.ActionIconProps{

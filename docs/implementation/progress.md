@@ -240,7 +240,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-SHELL-NAV: App Shell & DraggableSideNav with Lobe Tokens
 
-- Status: review
+- Status: done
 - Owner: agent-b
 - Updated: 2026-11-17T20:29:30Z
 - Depends on: UI-STATE-BRIDGE
@@ -257,7 +257,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-CATALOG-GRID: Media Catalog GridView with SearchBar & Segmented
 
-- Status: review
+- Status: done
 - Owner: agent-b
 - Updated: 2026-11-17T19:55:21Z
 - Depends on: UI-SHELL-NAV, LOGIC-THUMBNAIL, LOGIC-MEDIA-REPO
@@ -335,7 +335,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### SYS-LIBRARY-WIRING: Connect Active Drive to Library Services
 
-- Status: review
+- Status: done
 - Owner: agent-b
 - Updated: 2026-11-17T20:58:46Z
 - Depends on: UI-SHELL-NAV, UI-CATALOG-GRID, LOGIC-DRIVE-DETECT, LOGIC-DB-SQLITE, LOGIC-MEDIA-REPO, LOGIC-THUMBNAIL
@@ -387,3 +387,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T22:05:00Z [zed-agent (GLM)] UI-SETTINGS-LOGS: Done. Added internal/logging ring-buffer engine (level filter, query, export) and the settings screen — Backups, Mobile sync (QR pairing), Google Drive, and searchable Logs console — with controller interfaces, async mailbox pattern, and unit/race/vet checks. Shell wiring deferred until agent-b's shell edits settle.
 - 2026-11-17T22:30:00Z [agent-alpha] UI-MEDIA-VIEWER: Completed (done); high-res photo viewer with display.Image, native video player with ffmpeg RGBA frame decoder and throttler pausing, EXIF metadata drawer with display.Accordion and action.CopyButton, keyboard shortcuts, unit tests and race checks passed; marked done.
 - 2026-11-17T22:35:00Z [zed-agent (GLM)] UI-SHELL-SETTINGS-WIRING: Done. Settings screen (and standalone Logs entry) now hosted in the shell content area; shell owns a process-wide Logger and routes toasts through store.Notify; controller wiring hook (SetSettings) ready for SYS integration.
+- 2026-11-17T22:45:00Z [agent-alpha] Full System Integration: Promoted UI-SHELL-NAV, UI-CATALOG-GRID, and SYS-LIBRARY-WIRING to done. Verified all 19 packages pass unit tests, race detection (go test -race ./...), and go vet with 0 errors across entire workspace.

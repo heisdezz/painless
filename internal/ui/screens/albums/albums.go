@@ -40,6 +40,7 @@ type Options struct {
 	Thumbs        Thumbnailer
 	RefreshWindow func()
 	DriveRoot     string
+	ReadOnly      bool
 }
 
 // Screen manages album browsing, member viewing, and modal lifecycle.
@@ -49,6 +50,7 @@ type Screen struct {
 	thumbs        Thumbnailer
 	refreshWindow func()
 	driveRoot     string
+	readOnly      bool
 
 	// Gallery & Detail state
 	summaries     []domain.AlbumSummary
@@ -94,6 +96,7 @@ func New(opts Options) *Screen {
 		thumbs:        opts.Thumbs,
 		refreshWindow: opts.RefreshWindow,
 		driveRoot:     opts.DriveRoot,
+		readOnly:      opts.ReadOnly || opts.Albums == nil,
 		deleteMode:    "soft",
 	}
 	s.Reload()
