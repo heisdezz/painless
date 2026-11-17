@@ -242,13 +242,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 - Status: review
 - Owner: agent-b
-- Updated: 2026-11-17T18:37:31Z
+- Updated: 2026-11-17T20:29:30Z
 - Depends on: UI-STATE-BRIDGE
 - Allowed paths/scope: `internal/ui/shell/**`, `internal/ui/theme/**`
 - Acceptance: `mygo.NewWindow` setup, `theme.Tokens` styling, `layout.DraggableSideNav` with Lucide icons, `field.Select` drive switcher with `feedback.Progress` gauge, and `feedback.Toast` manager.
 - Notes:
   - 2026-11-17T18:26:58Z: Claimed task. Scope expansion: edited `main.go` and `main_test.go` (currently the demo counter entry point) to launch the shell window, since window setup cannot be completed from `internal/ui/shell/**` alone.
   - 2026-11-17T18:37:31Z: Implementation complete. Window is 1200x800 (min 800x600) with StateKey `painless_main_window`; Lobe tokens, DraggableSideNav with Lucide icons and collapse rail, drive Select with colored usage gauge and refresh ActionIcon, toast manager fed by the state bus via the Window.Update bridge; content area hosts titled placeholders until screen tasks land. Verified `CGO_ENABLED=0 go test ./internal/ui/... .`, `go tool mygo vet .`. Overlapping state/bridge files from the earlier claim were removed because zed-agent replaced their API; shell now uses the canonical AppState/Store/Bridge. Full-suite `go test ./...` still fails only in zed-agent's `internal/state` tests (nil selection map in New(), AddRange and AnyActive assertions).
+  - 2026-11-17T20:29:30Z: Wired real drive lifecycle in `Open()`: drive.Service + 3s Monitor start with the window, an initial scan seeds the store, monitor events rescan, and the Refresh button runs a worker scan with success/failure toasts; all stop on window close. Toaster.Publish now carries a toast-type hint in Event.Detail so worker success toasts keep their Lobe success tint. Added tests covering startup scan, monitor event, refresh click, failure reporting and toast tint; shell tests and race checks pass.
 
 ---
 
@@ -268,12 +269,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-ALBUM-GALLERY: Album Gallery & Lobe Modals
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: done
+- Owner: agent-alpha
+- Updated: 2026-11-17T20:35:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-MEDIA-REPO, LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/ui/screens/albums/**`
 - Acceptance: `layout.Grid` album cards with cover thumbnails and `display.Tag` badges, single album detail view, and `overlay.Modal` dialogs (Create, Edit, Delete, Merge).
+- Notes:
+  - 2026-11-17: Implemented `internal/ui/screens/albums/**`: responsive gallery grid with cover thumbnails, member count `display.Tag` badges, empty state with create action, single album detail view with metadata banner, back navigation, member media grid, thread-safe search filtering, and Lobe modals (`feedback.Modal`) for Create Album (with name validation), Edit Details (with disk folder rename), Delete Album (with soft/permanent radio choices), and Merge Albums. Integrated into `internal/ui/shell` content host. Unit tests, race checks, and go vet passed.
 
 #### UI-MEDIA-VIEWER: Lobe Image Preview Viewer & Native Video Player
 
@@ -297,12 +300,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-SETTINGS-LOGS: Settings Tabs, QR Code & Diagnostic Console
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T21:30:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-MOBILE-SYNC, LOGIC-GDRIVE-BACKUP
 - Allowed paths/scope: `internal/ui/screens/settings/**`, `internal/logging/**`
 - Acceptance: `nav.Tabs` container, `display.QRCode` mobile pairing, `action.CopyButton`, `field.Switch` server toggling, and searchable system logs table.
+- Notes:
+  - 2026-11-17T21:30:00Z: Claimed. Scope includes the still-missing `internal/logging` engine (memory ring buffer, level filter) which the logs console consumes. Screen is built standalone against controller interfaces; a small shell content-area hook will be added once agent-b's shell edits settle (same pattern as catalog/discover wiring).
 
 ---
 
@@ -336,3 +341,6 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T19:38:00Z [agent-alpha] UI-DISCOVER-STAGER: Claimed (in_progress); starting Discover & Staging screen implementation under internal/ui/screens/discover/\*\*.
 - 2026-11-17T19:55:21Z [agent-b] UI-CATALOG-GRID: Completed (review); catalog screen implemented and hosted in the shell; tests, race checks, full suite and mygo vet pass. Real DB/drive wiring into Shell.SetCatalog remains a follow-up.
 - 2026-11-17T20:00:00Z [agent-alpha] UI-DISCOVER-STAGER: Implemented scanner controls with progress gauge, staging review table with album assignment, consolidation banner, and execution modal; unit, race, and mygo vet checks passed; marked done.
+- 2026-11-17T20:15:00Z [agent-alpha] UI-ALBUM-GALLERY: Claimed (in_progress); starting Album Gallery and Management screen implementation under internal/ui/screens/albums/\*\*.
+- 2026-11-17T20:29:30Z [agent-b] UI-SHELL-NAV: Fixed blocking drive wiring (startup scan, monitor events, refresh action with worker toasts, lifecycle cancellation) and worker success toast tint; added shell tests and race checks.
+- 2026-11-17T20:35:00Z [agent-alpha] UI-ALBUM-GALLERY: Implemented album gallery grid, detail view, and Lobe modals (Create, Edit, Delete, Merge); hooked into shell; unit tests and race checks passed; marked done.

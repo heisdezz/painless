@@ -3,9 +3,12 @@
 package shell
 
 import (
+	"context"
+
 	mui "github.com/egoist/mygo/ui"
 
 	"painless/internal/state"
+	"painless/internal/ui/screens/albums"
 	"painless/internal/ui/screens/catalog"
 	"painless/internal/ui/screens/discover"
 	uitheme "painless/internal/ui/theme"
@@ -18,7 +21,9 @@ type Shell struct {
 	store    *state.Store
 	toaster  *Toaster
 	catalog  *catalog.Screen
+	albums   *albums.Screen
 	discover *discover.Screen
+	drives   *driveController
 
 	navWidth    float32
 	navExpanded bool
@@ -34,6 +39,7 @@ func New(store *state.Store) *Shell {
 		store:       store,
 		toaster:     newToaster(store),
 		catalog:     catalog.New(catalog.Options{}),
+		albums:      albums.New(albums.Options{}),
 		discover:    discover.New(discover.Options{Store: store}),
 		navWidth:    220,
 		navExpanded: true,
@@ -54,6 +60,21 @@ func (s *Shell) SetCatalog(source catalog.Source, thumbs catalog.Thumbnailer, ac
 
 // Catalog returns the library screen, for tests and further wiring.
 func (s *Shell) Catalog() *catalog.Screen { return s.catalog }
+
+// SetAlbums configures the album gallery screen.
+func (s *Shell) SetAlbums(a *albums.Screen) {
+	s.albums = a
+}
+
+// Albums returns the album gallery screen.
+func (s *Shell) Albums() *albums.Screen { return s.albums }
+
+// attachDrives installs the drive controller and its refresh action. The
+// controller also seeds the store and watches monitor events when started.
+func (s *Shell) attachDrives(controller *driveController) {
+	s.drives = controller
+	s.refresh = func() { controller.Refresh(context.Background()) }
+}
 
 // SetDiscover configures the discover & staging screen.
 func (s *Shell) SetDiscover(d *discover.Screen) {

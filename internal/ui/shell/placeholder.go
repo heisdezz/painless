@@ -68,6 +68,10 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.catalog.View(c) })
 			return
 		}
+		if screen == state.ScreenAlbums && s.albums != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.albums.View(c) })
+			return
+		}
 		if screen == state.ScreenDiscover && s.discover != nil {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.discover.View(c) })
 			return
