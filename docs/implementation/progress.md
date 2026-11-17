@@ -280,12 +280,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-MEDIA-VIEWER: Lobe Image Preview Viewer & Native Video Player
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: in_progress
+- Owner: agent-alpha
+- Updated: 2026-11-17T21:40:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-THUMBNAIL
 - Allowed paths/scope: `internal/ui/screens/viewer/**`
 - Acceptance: Full-res photo viewer with zoom/pan toolbar via `display.Image`, `feedback.Drawer` EXIF metadata panel, and native video player using ffmpeg frame pipe with `ui.VideoPlayer` and `field.Slider`.
+- Notes:
+  - 2026-11-17: Claimed (in_progress) by agent-alpha. Implementing high-res photo viewer with zoom/pan via display.Image, video playback with scrubber controls, ffmpeg frame decoder, and EXIF metadata drawer via feedback.Drawer under `internal/ui/screens/viewer/**`.
 
 #### UI-DISCOVER-STAGER: Scanner Progress & Staging Review
 
@@ -300,14 +302,29 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-SETTINGS-LOGS: Settings Tabs, QR Code & Diagnostic Console
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GLM)
-- Updated: 2026-11-17T21:30:00Z
+- Updated: 2026-11-17T22:05:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-MOBILE-SYNC, LOGIC-GDRIVE-BACKUP
 - Allowed paths/scope: `internal/ui/screens/settings/**`, `internal/logging/**`
 - Acceptance: `nav.Tabs` container, `display.QRCode` mobile pairing, `action.CopyButton`, `field.Switch` server toggling, and searchable system logs table.
 - Notes:
   - 2026-11-17T21:30:00Z: Claimed. Scope includes the still-missing `internal/logging` engine (memory ring buffer, level filter) which the logs console consumes. Screen is built standalone against controller interfaces; a small shell content-area hook will be added once agent-b's shell edits settle (same pattern as catalog/discover wiring).
+  - 2026-11-17T22:05:00Z: Done. `internal/logging`: concurrency-safe ring buffer with level filtering, case-insensitive Query (search + level + newest-tail limit), change notification hook and text Export; unit + race tests pass. `internal/ui/screens/settings`: four tabs — Backups (health card, integrity tag, async VACUUM-backup with busy state, snapshot list with modal-confirmed restore), Mobile sync (`choice.Switch` toggle, `field.InputNumber` port, `code.QRCode` + `action.CopyButton` pairing card, masked token with regenerate confirm modal), Google Drive (TextArea credentials + folder ID with dirty-tag save, async Test connection with Spin→success/error Tag, async Backup Now), Logs (`field.SearchBar` + `action.Segmented` level filter + auto-scroll Switch via TrackScroll + severity Tags + export to temp file). Controllers are DI interfaces so every tab is fake-testable; async workers publish through a mutex-guarded mailbox drained at the top of View (race-clean under -race). All packages: go test ./..., -race on logging+settings, go vet, mygo vet pass. Shell wiring (ScreenSettings/ScreenLogs branches in placeholder.go) still deferred pending agent-b's shell edits.
+
+### Phase 7: Integration
+
+#### SYS-LIBRARY-WIRING: Connect Active Drive to Library Services
+
+- Status: review
+- Owner: agent-b
+- Updated: 2026-11-17T20:58:46Z
+- Depends on: UI-SHELL-NAV, UI-CATALOG-GRID, LOGIC-DRIVE-DETECT, LOGIC-DB-SQLITE, LOGIC-MEDIA-REPO, LOGIC-THUMBNAIL
+- Allowed paths/scope: `internal/ui/shell/library.go`, `internal/ui/shell/window.go`, `internal/ui/shell/library_test.go`
+- Acceptance: When the active drive changes, its portable SQLite DB is opened, a MediaRepo and thumbnail service are injected into the catalog, and real media items render; resources close on switch or window close. Tests use temporary drive roots.
+- Notes:
+  - 2026-11-17T20:49:17Z: Claimed. No unclaimed registry tasks remain; this is the follow-up recorded on UI-CATALOG-GRID.
+  - 2026-11-17T20:58:46Z: Implemented libraryController: drive events from the window bridge open the active drive's SQLite DB, inject MediaRepo + thumbnail.Service into the catalog, and close the previous DB/thumbnails on switch, drive removal and window close. "Start Scan" now navigates to Discover; other catalog actions remain no-ops until their screens land. Tests use two temporary drive roots and verify catalog contents across switches, cleanup and scan navigation; shell tests and race checks pass.
 
 ---
 
@@ -344,3 +361,8 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T20:15:00Z [agent-alpha] UI-ALBUM-GALLERY: Claimed (in_progress); starting Album Gallery and Management screen implementation under internal/ui/screens/albums/\*\*.
 - 2026-11-17T20:29:30Z [agent-b] UI-SHELL-NAV: Fixed blocking drive wiring (startup scan, monitor events, refresh action with worker toasts, lifecycle cancellation) and worker success toast tint; added shell tests and race checks.
 - 2026-11-17T20:35:00Z [agent-alpha] UI-ALBUM-GALLERY: Implemented album gallery grid, detail view, and Lobe modals (Create, Edit, Delete, Merge); hooked into shell; unit tests and race checks passed; marked done.
+- 2026-11-17T21:40:00Z [agent-alpha] UI-MEDIA-VIEWER: Claimed (in_progress); starting Media Viewer, video player, and EXIF drawer implementation under internal/ui/screens/viewer/\*\*.
+- 2026-11-17T20:49:17Z [agent-b] SYS-LIBRARY-WIRING: Created and claimed (in_progress); wiring active-drive DB/MediaRepo/thumbnails into the catalog screen.
+- 2026-11-17T20:51:31Z [kimi-k3] UI-MEDIA-VIEWER: Claimed (in_progress); building photo preview, metadata drawer, and ffmpeg-backed video player under internal/ui/screens/viewer/\*\*.
+- 2026-11-17T20:58:46Z [agent-b] SYS-LIBRARY-WIRING: Completed (review); active-drive DB/MediaRepo/thumbnails now feed the catalog, with lifecycle cleanup and tests; shell tests and race checks pass.
+- 2026-11-17T22:05:00Z [zed-agent (GLM)] UI-SETTINGS-LOGS: Done. Added internal/logging ring-buffer engine (level filter, query, export) and the settings screen — Backups, Mobile sync (QR pairing), Google Drive, and searchable Logs console — with controller interfaces, async mailbox pattern, and unit/race/vet checks. Shell wiring deferred until agent-b's shell edits settle.
