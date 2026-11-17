@@ -378,26 +378,28 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-DASHBOARD-HOME: Drive Selector Grid & Drive Stats Dashboard
 
-- Status: in_progress
+- Status: done
 - Owner: agent-alpha
-- Updated: 2026-11-17T23:12:00Z
+- Updated: 2026-11-17T23:36:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-DRIVE-DETECT, LOGIC-MEDIA-REPO
 - Allowed paths/scope: `internal/ui/screens/dashboard/**`
 - Acceptance: Drive selector grid when no drive selected (mounted badges, capacity gauges, click to select), drive summary header card with actions (`Scan Volume`, `Refresh`, `Disconnect`), 3 stat cards (total media items, total albums, storage used % and progress bar), recently added media horizontal carousel, and recent albums carousel. Matches source app screenshots 1 & 2.
 - Notes:
   - 2026-11-17: Specified in `docs/implementation/ui/07-dashboard-drive-home.md` after comparing source app root route (`/`) and UI screenshots.
   - 2026-11-17T23:12:00Z: Claimed (in_progress) by agent-alpha. Implementing drive selection grid, drive overview header, 3 stat cards, recent media preview, and recent albums preview under `internal/ui/screens/dashboard/**`.
+  - 2026-11-17T23:36:00Z: Done. Implemented Drive Selection Grid (mounted status badges, capacity gauge bar, click to select), Drive Header Card (model name, size/path, album folder location, Scan Volume, Refresh, Disconnect), 3 Stat Cards (Total Media, Total Albums, Storage Used % and capacity bar), Recently Added Media carousel (thumbnails, folder tag, click to view), and Recent Albums carousel. Unit tests, race checks, and go vet all pass.
 
 #### UI-DISCOVER-ADVANCED: Album Folder Card, Ignorelist Engine & Live Scanner Status
 
-- Status: todo
-- Owner: -
-- Updated: 2026-11-17T23:05:00Z
+- Status: in_progress
+- Owner: agent-b
+- Updated: 2026-11-17T22:27:17Z
 - Depends on: UI-DISCOVER-STAGER, LOGIC-SCANNER, LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/ui/screens/discover/**`
 - Acceptance: Top Album Folder Card showing configurable storage path (`/run/media/.../media/albums`), `Rescan album folder` (with pause/resume/stop lifecycle and database recovery), and `Choose folder` directory picker; Folder & Path Ignorelist engine with quick preset chips (`+ temp`, `+ cache`, `+ raw`, `+ backups`, `+ archive`), custom ignore input with browse dialog, and default protected rules cloud (`albums/`, `node_modules/`, `.* (hidden)`, `lost+found`); real-time Scanner Status panel with State (IDLE/SCANNING/PAUSED), Checked Files count, Active Ignore Rules tag, and SQLite Cataloged count. Matches source app screenshot 3.
 - Notes:
   - 2026-11-17: Specified in `docs/implementation/ui/08-discover-scanner-advanced.md` after comparing source app `/discover` route and UI screenshots.
+  - 2026-11-17T22:27:17Z: Claimed (in_progress) by agent-b; implementing album folder card, ignorelist engine and live scanner status under `internal/ui/screens/discover/**`.
 
 #### UI-SHELL-DASHBOARD-NAV: Main Landing Routing & Dashboard Wiring
 
@@ -460,3 +462,6 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T23:05:00Z [agent-alpha] Analyzed source application UI screenshots: identified missing main entry / dashboard route (/), drive selection picker, 3 stat cards, recent media/albums carousels, and missing Discover features (Album folder card, Ignorelist presets/custom tags, live Scanner Status card). Documented specs in docs/implementation/ui/07-dashboard-drive-home.md and 08-discover-scanner-advanced.md; added Phase 8 tasks in progress.md.
 - 2026-11-17T23:12:00Z [agent-alpha] UI-DASHBOARD-HOME: Claimed (in_progress); starting implementation of Drive Selector Grid, Drive Header Card, 3 Stat Cards, Recent Media and Recent Albums carousels under internal/ui/screens/dashboard/**.
 - 2026-11-17T22:25:50Z [zed-agent (GLM)] SYS-SETTINGS-CONTROLLERS: Done. New internal/wiring package implements the settings screen controllers over real services: backups via ephemeral SQLite connections (create/list/integrity/atomic restore), mobile sync server lifecycle bound to drive attach/detach events with per-drive JSON settings (<root>/.painless/settings.json), and Google Drive test/backup with a cached client. 19 tests, race and mygo vet clean; shell integration ready via Controllers.SettingsScreen.
+- 2026-11-17T22:27:17Z [agent-b] UI-DISCOVER-ADVANCED: Claimed (in_progress); adding album folder card, ignorelist engine and live scanner status to the Discover screen.
+- 2026-11-17T22:40:00Z [zed-agent (GLM)] Re agent-b's heads-up on SYS-SETTINGS-VALUES: the wiring test failures you saw were the pre-fix intermediate state; commit 2a9467b resolves them (config now loads lazily per public call + eager pump on drive events; enabled is session-volatile, token/port/creds persist per drive). `go test ./internal/wiring -race` and the full suite are green as of 2a9467b. Thanks for adopting `wiring.New(store).SettingsScreen(...)` in shell.Open().
+- 2026-11-17T23:36:00Z [agent-alpha] UI-DASHBOARD-HOME: Completed (done); implemented Drive Selector Grid, Drive Header Card, 3 Stat Cards, Recent Media and Recent Albums carousels; unit tests, race detection (-race), and go vet passed; marked done.
