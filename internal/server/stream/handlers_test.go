@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -22,18 +21,18 @@ type fakeResolver struct {
 	byID   map[int64]*domain.MediaItem
 }
 
-func (f *fakeResolver) ByPath(_ context.Context, rel string) (*domain.MediaItem, error) {
+func (f *fakeResolver) GetByPath(_ context.Context, rel string) (*domain.MediaItem, error) {
 	if item, ok := f.byPath[rel]; ok {
 		return item, nil
 	}
-	return nil, fmt.Errorf("%w: %q", ErrNotFound, rel)
+	return nil, nil
 }
 
-func (f *fakeResolver) ByID(_ context.Context, id int64) (*domain.MediaItem, error) {
+func (f *fakeResolver) GetByID(_ context.Context, id int64) (*domain.MediaItem, error) {
 	if item, ok := f.byID[id]; ok {
 		return item, nil
 	}
-	return nil, fmt.Errorf("%w: id %d", ErrNotFound, id)
+	return nil, nil
 }
 
 // fakeThumbs returns deterministic WebP-ish bytes.
@@ -46,7 +45,7 @@ func (f fakeThumbs) Get(_ context.Context, item domain.MediaItem) ([]byte, error
 	return []byte("RIFFxxxxWEBP:" + item.FileHash), nil
 }
 
-func testEnv(t *testing.T) (root string, res *fakeResolver, srv *Server) {
+func testEnv(t *testing.T) (root string, res *fakeResolver, srv *Routes) {
 	t.Helper()
 	root = t.TempDir()
 
@@ -75,16 +74,15 @@ func testEnv(t *testing.T) (root string, res *fakeResolver, srv *Server) {
 			1: {ID: 1, FileHash: "h1", CurrentRelativePath: "vacation.mp4", MimeType: "video/mp4"},
 		},
 	}
-	srv = New(Options{
-		Port:       0,
-		DriveRoot:  root,
+	srv = &Routes{
+		DriveRoot:  func() string { return root },
 		Resolver:   res,
 		Thumbnails: fakeThumbs{},
-	})
+	}
 	return root, res, srv
 }
 
-func serve(t *testing.T, srv *Server) *httptest.Server {
+func serve(t *testing.T, srv *Routes) *httptest.Server {
 	t.Helper()
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
@@ -108,9 +106,6 @@ func TestStreamFullBody(t *testing.T) {
 	}
 	if acr := resp.Header.Get("Accept-Ranges"); acr != "bytes" {
 		t.Errorf("Accept-Ranges = %q, want bytes", acr)
-	}
-	if ao := resp.Header.Get("Access-Control-Allow-Origin"); ao != "*" {
-		t.Errorf("CORS header = %q, want *", ao)
 	}
 	data, _ := io.ReadAll(resp.Body)
 	if len(data) != 1024 {
@@ -252,7 +247,7 @@ func TestThumbnailEndpoint(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "image/webp" {
 		t.Errorf("Content-Type = %q", ct)
 	}
-	if cc := resp.Header.Get("Cache-Control"); cc != cacheImmutable {
+	if cc := resp.Header.Get("Cache-Control"); cc != thumbnailCache {
 		t.Errorf("Cache-Control = %q", cc)
 	}
 
@@ -270,101 +265,12 @@ func TestThumbnailEndpoint(t *testing.T) {
 
 	// Thumbnailer failure surfaces as 500.
 	res.byID[7] = &domain.MediaItem{ID: 7, FileHash: "h7"}
-	srvFail := New(Options{DriveRoot: "x", Resolver: res, Thumbnails: fakeThumbs{fail: errors.New("boom")}})
+	srvFail := &Routes{DriveRoot: func() string { return "x" }, Resolver: res, Thumbnails: fakeThumbs{fail: errors.New("boom")}}
 	tsFail := serve(t, srvFail)
 	if r, _ := http.Get(tsFail.URL + "/thumbnail?mediaId=7"); r.StatusCode != http.StatusInternalServerError {
 		t.Errorf("failing thumb status = %d", r.StatusCode)
 	} else {
 		r.Body.Close()
-	}
-}
-
-func TestHealthEndpoint(t *testing.T) {
-	root, _, srv := testEnv(t)
-	ts := serve(t, srv)
-
-	resp, err := http.Get(ts.URL + "/health")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	if want := fmt.Sprintf(`"drive_root":%q`, root); !strings.Contains(string(body), want) {
-		t.Errorf("health body = %s, want to contain %s", body, want)
-	}
-}
-
-func TestSetDriveRootSwitch(t *testing.T) {
-	root, _, srv := testEnv(t)
-	ts := serve(t, srv)
-
-	// Point at an empty sandbox: previously valid paths now 404 on disk.
-	empty := t.TempDir()
-	srv.SetDriveRoot(empty)
-	resp, err := http.Get(ts.URL + "/stream?path=vacation.mp4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("after root switch status = %d, want 404", resp.StatusCode)
-	}
-
-	srv.SetDriveRoot(root)
-	resp, err = http.Get(ts.URL + "/stream?path=vacation.mp4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("after restore status = %d, want 200", resp.StatusCode)
-	}
-}
-
-func TestStartShutdown(t *testing.T) {
-	_, _, srv := testEnv(t)
-	if err := srv.Start(); err != nil {
-		t.Fatal(err)
-	}
-	addr := srv.Addr()
-	if addr == "" {
-		t.Fatal("Addr empty after Start")
-	}
-
-	resp, err := http.Get("http://" + addr + "/health")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		t.Fatalf("Shutdown: %v", err)
-	}
-	// Second shutdown is a safe no-op; Addr cleared.
-	if err := srv.Shutdown(ctx); err != nil {
-		t.Errorf("second Shutdown: %v", err)
-	}
-	if srv.Addr() != "" {
-		t.Errorf("Addr after shutdown = %q, want empty", srv.Addr())
-	}
-
-	// Port was released: rebinding must succeed.
-	srv2 := New(Options{DriveRoot: t.TempDir(), Resolver: &fakeResolver{}})
-	if err := srv2.Start(); err != nil {
-		// Ephemeral port reuse is not guaranteed but expected here; do not
-		// fail the build on a busy port, just report.
-		t.Logf("rebind after shutdown failed: %v", err)
-		return
-	}
-	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
-	defer cancel2()
-	if err := srv2.Shutdown(ctx2); err != nil {
-		t.Errorf("srv2 Shutdown: %v", err)
 	}
 }
 

@@ -184,17 +184,19 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 ### Phase 4: Network Services & Cloud Backup
 
-#### LOGIC-MEDIA-SERVER: Local Media Streaming HTTP Server
+#### LOGIC-MEDIA-SERVER: Mobile Media Playback
 
 - Status: done
 - Owner: zed-agent (GLM)
 - Updated: 2026-11-17T20:35:00Z
 - Depends on: LOGIC-DB-SQLITE
 - Allowed paths/scope: `internal/server/stream/**`
-- Acceptance: HTTP 206 Range requests via `http.ServeContent`, path traversal defense, and thumbnail endpoint on port 51789.
+- Acceptance: Cataloged media supports HTTP 206 Range requests and drive-root checks; playback and thumbnails share the mobile sync listener and read-auth policy. The native viewer reads local files directly.
 - Notes:
   - 2026-11-17: Implemented `internal/server/stream`: `Server` (Start/Shutdown/Addr/SetDriveRoot) with 4-layer path sandbox in `security.go` (relative-only, canonical root, EvalSymlinks, Rel containment) plus lexical `ValidateRelPath` pre-check so traversal/absolute/empty queries are rejected 403 before catalog lookup; `RepoResolver` over `storage.DB.Raw()` exact-path/ID SQL; handlers for `/stream` (ServeContent 206/HEAD/conditional, explicit Content-Type, CORS), `/thumbnail` (webp + immutable cache), `/health`. Default port 51789.
   - 2026-11-17: Fixed Start/Shutdown race (serve goroutine captured local \*http.Server; Shutdown may nil s.http concurrently) and one test-path bug. Verified: `go test -race ./internal/server/stream/` pass (incl. <5ms avg seek latency, traversal/secret-leak checks), `go test ./...` all green, `go tool mygo vet .` clean, gofmt clean.
+
+  - Follow-up: Removed the standalone streaming listener. Playback and thumbnails are mounted on the mobile sync server; native desktop playback uses filesystem paths.
 
 #### LOGIC-MOBILE-SYNC: Mobile Companion REST & Upload API
 

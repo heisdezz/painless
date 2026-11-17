@@ -1,7 +1,6 @@
 // Package mobile serves the authenticated REST and upload API consumed
-// by mobile companion apps on the local Wi-Fi network. It pairs with the
-// stream package: a configured stream handler is mounted under /stream so
-// phones can play full media files after browsing the catalog.
+// by mobile companion apps on the local Wi-Fi network, including playback
+// and thumbnails for cataloged media.
 package mobile
 
 import (
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/server/stream"
 	"painless/internal/storage"
 )
 
@@ -50,16 +50,14 @@ type Options struct {
 	// Albums and Media are the library repositories backing the API.
 	Albums *storage.AlbumRepo
 	Media  *storage.MediaRepo
-	// Thumbnails, when set, receives background warm requests for
-	// uploaded files.
+	// Thumbnails, when set, serves thumbnails and warms them in the
+	// background for newly uploaded files.
 	Thumbnails ThumbnailWarmer
 	// DriveInfo, when set, supplies the active drive snapshot reported by
 	// /api/status.
 	DriveInfo func() *domain.DriveInfo
 	// MaxUploadBytes caps one upload. Zero selects DefaultMaxUploadBytes.
 	MaxUploadBytes int64
-	// Stream, when set, is mounted at /stream for media playback.
-	Stream http.Handler
 }
 
 // Server exposes the mobile companion REST API over HTTP.
@@ -108,9 +106,9 @@ func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Access-Control-Allow-Origin", "*")
-		h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-File-Name, X-Album-ID")
-		h.Set("Access-Control-Expose-Headers", "Content-Length, Content-Range")
+		h.Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PATCH, DELETE, OPTIONS")
+		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Range, X-File-Name, X-Album-ID")
+		h.Set("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -132,12 +130,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/media/{id}", guard(s.handleGetMedia))
 	mux.Handle("POST /api/upload", guard(s.handleUpload))
 
-	if s.opts.Stream != nil {
-		// The stream handler routes purely on query parameters, so the
-		// mount needs no prefix stripping.
-		mux.Handle("GET /stream", s.opts.Stream)
-		mux.Handle("GET /stream/", s.opts.Stream)
+	playback := stream.Routes{DriveRoot: s.root, Thumbnails: s.opts.Thumbnails}
+	if s.opts.Media != nil {
+		playback.Resolver = s.opts.Media
 	}
+	mediaHandler := playback.Handler()
+	mux.Handle("GET /stream", guard(mediaHandler.ServeHTTP))
+	mux.Handle("GET /thumbnail", guard(mediaHandler.ServeHTTP))
 
 	return s.cors(mux)
 }

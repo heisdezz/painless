@@ -30,8 +30,8 @@ graph TD
         ScanSvc[Scanner & Indexing Worker]
         StagingSvc[File Staging & Ops Engine]
         ThumbSvc[Thumbnail Pipeline Worker]
-        StreamSvc[Local Media HTTP Server]
-        MobileSvc[Mobile Sync REST Server]
+        StreamSvc[Mobile Playback Handlers]
+        MobileSvc[Mobile Sync HTTP Server]
         GDriveSvc[Google Drive Backup Worker]
     end
 
@@ -54,8 +54,8 @@ graph TD
     AppState --> ScanSvc
     AppState --> StagingSvc
     AppState --> ThumbSvc
-    AppState --> StreamSvc
     AppState --> MobileSvc
+    MobileSvc --> StreamSvc
     AppState --> GDriveSvc
 
     DriveSvc --> ExtDrive
@@ -93,10 +93,9 @@ painless/
 │   ├── fileops/              # Physical file moves, album directories, staging, cleanup
 │   ├── scanner/              # Concurrent folder walker, hashing, EXIF/duration extractors
 │   ├── thumbnail/            # ffmpeg generation, CPU throttling (SIGSTOP/SIGCONT), caching
-│   ├── server/               # Local HTTP streaming & mobile sync servers
-│   │   ├── stream.go         # Range-request media streaming (port 51789)
-│   │   ├── mobile_sync.go    # Mobile sync HTTP server & routing
-│   │   └── mobile_crud.go    # Mobile REST API & multipart uploads
+│   ├── server/               # Mobile-only HTTP API
+│   │   ├── stream/           # Media playback & thumbnail handlers (no listener)
+│   │   └── mobile/           # Mobile sync, uploads & playback (port 51790)
 │   ├── gdrive/               # Google Drive backup via official Google API SDK
 │   ├── logging/              # Centralized logging engine with level filtering & memory ring buffer
 │   ├── state/                # Application state, selection state, active drive, job tracking
@@ -148,7 +147,7 @@ Instead of constructing basic widgets from scratch, Painless leverages **Lobe My
 3. [03. File Operations, Staging & Album Consolidation](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/03-file-operations-staging.md)
 4. [04. Media Scanner, Duplicate Hashing & Metadata Indexing](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/04-scanner-indexing.md)
 5. [05. Thumbnail Pipeline, Caching & CPU Throttling](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/05-thumbnail-pipeline.md)
-6. [06. Local Media Streaming HTTP Server](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/06-media-streaming-server.md)
+6. [06. Mobile Media Playback](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/06-media-streaming-server.md)
 7. [07. Mobile Companion Sync REST & Upload API](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/07-mobile-sync-api.md)
 8. [08. Google Drive Cloud Backup Service](file:///run/media/destiny/Ventoy/dr_projects/painless/docs/implementation/logic/08-cloud-backup-gdrive.md)
 

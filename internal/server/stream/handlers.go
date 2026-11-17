@@ -3,7 +3,7 @@ package stream
 import (
 	"context"
 	"errors"
-	"fmt"
+
 	"io/fs"
 	"mime"
 	"net/http"
@@ -13,15 +13,17 @@ import (
 	"time"
 )
 
-// cacheImmutable marks hash-addressed thumbnails as cacheable forever.
-const cacheImmutable = "public, max-age=31536000, immutable"
+// Thumbnails are addressed by media ID, which may be reused on another drive.
+const thumbnailCache = "private, no-cache"
 
 // handleStream serves a cataloged media file with full Range support via
 // http.ServeContent. Query: path=<drive-relative path>.
-func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	allowCORS(w)
-
-	if s.opts.Resolver == nil {
+func (s Routes) handleStream(w http.ResponseWriter, r *http.Request) {
+	root := ""
+	if s.DriveRoot != nil {
+		root = s.DriveRoot()
+	}
+	if root == "" || s.Resolver == nil {
 		http.Error(w, "library resolver not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -33,13 +35,17 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		resolveError(w, err)
 		return
 	}
-	item, err := s.opts.Resolver.ByPath(r.Context(), relPath)
+	item, err := s.Resolver.GetByPath(r.Context(), relPath)
 	if err != nil {
-		lookupError(w, err)
+		http.Error(w, "library lookup failed", http.StatusInternalServerError)
+		return
+	}
+	if item == nil {
+		http.Error(w, "not in library", http.StatusNotFound)
 		return
 	}
 
-	path, err := ResolvePath(s.root(), item.CurrentRelativePath)
+	path, err := ResolvePath(root, item.CurrentRelativePath)
 	if err != nil {
 		resolveError(w, err)
 		return
@@ -67,12 +73,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(path), time.Time{}, file)
 }
 
-// handleThumbnail serves the cached WebP thumbnail for mediaId=, with
-// immutable caching since thumbnails are content-addressed by file hash.
-func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
-	allowCORS(w)
-
-	if s.opts.Thumbnails == nil || s.opts.Resolver == nil {
+// handleThumbnail serves the cached WebP thumbnail for mediaId=.
+func (s Routes) handleThumbnail(w http.ResponseWriter, r *http.Request) {
+	if s.Thumbnails == nil || s.Resolver == nil || s.DriveRoot == nil || s.DriveRoot() == "" {
 		http.Error(w, "thumbnails not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -81,12 +84,16 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid mediaId", http.StatusBadRequest)
 		return
 	}
-	item, err := s.opts.Resolver.ByID(r.Context(), id)
+	item, err := s.Resolver.GetByID(r.Context(), id)
 	if err != nil {
-		lookupError(w, err)
+		http.Error(w, "library lookup failed", http.StatusInternalServerError)
 		return
 	}
-	data, err := s.opts.Thumbnails.Get(r.Context(), *item)
+	if item == nil {
+		http.Error(w, "not in library", http.StatusNotFound)
+		return
+	}
+	data, err := s.Thumbnails.Get(r.Context(), *item)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -96,39 +103,12 @@ func (s *Server) handleThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "image/webp")
-	w.Header().Set("Cache-Control", cacheImmutable)
+	w.Header().Set("Cache-Control", thumbnailCache)
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	if r.Method == http.MethodHead {
 		return
 	}
 	_, _ = w.Write(data)
-}
-
-// handleHealth reports server status and the active sandbox root.
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if root := s.root(); root != "" {
-		_, _ = fmt.Fprintf(w, `{"status":"ok","drive_root":%q,"uptime_seconds":%d}`+"\n",
-			root, int64(time.Since(s.started).Seconds()))
-		return
-	}
-	_, _ = fmt.Fprintf(w, `{"status":"ok","drive_root":null,"uptime_seconds":%d}`+"\n",
-		int64(time.Since(s.started).Seconds()))
-}
-
-// allowCORS lets any local origin (embedded players, web views) read
-// responses.
-func allowCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-}
-
-// lookupError maps resolver failures to status codes.
-func lookupError(w http.ResponseWriter, err error) {
-	if errors.Is(err, ErrNotFound) {
-		http.Error(w, "not in library", http.StatusNotFound)
-		return
-	}
-	http.Error(w, "library lookup failed", http.StatusInternalServerError)
 }
 
 // resolveError maps sandbox failures to status codes.

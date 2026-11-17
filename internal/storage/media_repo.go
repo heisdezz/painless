@@ -93,6 +93,23 @@ func (r *MediaRepo) GetByID(ctx context.Context, id int64) (*domain.MediaItem, e
 	return item, nil
 }
 
+// GetByPath returns the item cataloged at an exact drive-relative path.
+func (r *MediaRepo) GetByPath(ctx context.Context, relPath string) (*domain.MediaItem, error) {
+	const query = `
+		SELECT id, file_hash, original_relative_path, current_relative_path,
+		       file_size, mime_type, duration_seconds, metadata_json, album_id, created_at
+		FROM media_items WHERE current_relative_path = ? LIMIT 1
+	`
+	item, err := scanMediaItem(r.db.Raw().QueryRowContext(ctx, query, relPath))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get media item by path %q: %w", relPath, err)
+	}
+	return item, nil
+}
+
 // GetItemWithNavigation retrieves a media item along with adjacent previous and next item IDs.
 func (r *MediaRepo) GetItemWithNavigation(ctx context.Context, id int64, albumID *int64) (*domain.MediaItem, *int64, *int64, error) {
 	item, err := r.GetByID(ctx, id)

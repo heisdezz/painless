@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -288,19 +290,74 @@ func TestStartShutdown(t *testing.T) {
 	}
 }
 
-func TestStreamMount(t *testing.T) {
-	_, srv, _, _ := newTestEnv(t)
-	srv.opts.Stream = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "stream-ok:"+r.URL.Query().Get("path"))
-	})
-	ts := serve(t, srv)
+type playbackThumbnails struct{}
 
-	body, err := io.ReadAll(mustGet(t, ts.URL+"/stream?path=abc").Body)
-	if err != nil {
+func (playbackThumbnails) Get(context.Context, domain.MediaItem) ([]byte, error) {
+	return []byte("webp thumbnail"), nil
+}
+
+func TestMobilePlayback(t *testing.T) {
+	root, srv, media, _ := newTestEnv(t)
+	srv.opts.ProtectReads = true
+	srv.opts.Thumbnails = playbackThumbnails{}
+	const rel = "unknown/clip.mp4"
+	if err := os.WriteFile(filepath.Join(root, rel), []byte("abcdef"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != "stream-ok:abc" {
-		t.Errorf("mounted stream body = %q", body)
+	ctx := context.Background()
+	if _, err := media.InsertBatch(ctx, []domain.MediaItem{{
+		FileHash: "clip-hash", OriginalRelativePath: rel, CurrentRelativePath: rel,
+		FileSize: 6, MimeType: "video/mp4",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	item, err := media.GetByHash(ctx, "clip-hash")
+	if err != nil || item == nil {
+		t.Fatalf("lookup catalog item: %v, %v", item, err)
+	}
+	thumb := fmt.Sprintf("/thumbnail?mediaId=%d", item.ID)
+	play := "/stream?path=" + rel
+	handler := srv.Handler()
+	request := func(method, target, token, byteRange string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, target, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		if byteRange != "" {
+			req.Header.Set("Range", byteRange)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w
+	}
+	for _, path := range []string{play, thumb} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			if got := request(method, path, "", ""); got.Code != http.StatusUnauthorized {
+				t.Errorf("unauthenticated %s %s: status = %d, want 401", method, path, got.Code)
+			}
+		}
+	}
+	got := request(http.MethodGet, play, testToken, "bytes=1-3")
+	if got.Code != http.StatusPartialContent || got.Body.String() != "bcd" || got.Header().Get("Content-Range") != "bytes 1-3/6" {
+		t.Errorf("range response = %d %v %q", got.Code, got.Header(), got.Body.String())
+	}
+	got = request(http.MethodHead, play, testToken, "")
+	if got.Code != http.StatusOK || got.Header().Get("Content-Length") != "6" || got.Body.Len() != 0 {
+		t.Errorf("HEAD response = %d %v %q", got.Code, got.Header(), got.Body.String())
+	}
+	got = request(http.MethodGet, thumb, testToken, "")
+	if got.Code != http.StatusOK || got.Header().Get("Content-Type") != "image/webp" || got.Body.String() != "webp thumbnail" {
+		t.Errorf("thumbnail response = %d %v %q", got.Code, got.Header(), got.Body.String())
+	}
+
+	srv.SetDriveRoot(t.TempDir())
+	if got := request(http.MethodGet, play, testToken, ""); got.Code != http.StatusNotFound {
+		t.Errorf("after drive switch: status = %d, want 404", got.Code)
+	}
+	srv.SetDriveRoot("")
+	if got := request(http.MethodGet, play, testToken, ""); got.Code != http.StatusServiceUnavailable {
+		t.Errorf("without a drive: status = %d, want 503", got.Code)
 	}
 }
 

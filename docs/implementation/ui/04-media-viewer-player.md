@@ -30,6 +30,7 @@ The Media Viewer provides detailed inspection of individual media assets. It lev
 ### Video Decoding Architecture
 
 - Video playback uses `mygo/ui.VideoPlayer` driven by a custom `ui.VideoSeeker` implementation (`internal/ui/screens/viewer/ffmpeg_decoder.go`).
+- The desktop viewer opens the cataloged file on disk directly; it does not use the mobile HTTP playback endpoint.
 - The decoder spawns an `ffmpeg` frame extraction process:
   `ffmpeg -ss <offset> -i <path> -f rawvideo -pix_fmt rgba -s <w>x<h> -`
 - Uncompressed frames are piped directly to `mygo/ui.VideoFrame`.
