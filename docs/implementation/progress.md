@@ -170,14 +170,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-THUMBNAIL: Thumbnail Pipeline & CPU Throttler
 
-- Status: in_progress
+- Status: done
 - Owner: agent-b
-- Updated: 2026-11-17T18:49:32Z
+- Updated: 2026-11-17T19:14:06Z
 - Depends on: LOGIC-DOMAIN-MODELS
 - Allowed paths/scope: `internal/thumbnail/**`
 - Acceptance: Ffmpeg/imaging thumbnail generation, on-disk WebP caching (`.media_thumbnails/`), memory LRU, and SIGSTOP/SIGCONT CPU pause gate.
 - Notes:
   - 2026-11-17T18:49:32Z: Claimed task. Building the image/video thumbnail pipeline, persistent WebP cache, memory LRU and process throttler under internal/thumbnail/\*\*.
+  - 2026-11-17T19:14:06Z: Implemented `Service.Get/GetPath/Invalidate` with memory LRU, `.media_thumbnails/<hash[:2]>/<hash>.webp` disk cache, JPEG/PNG/WebP decode plus fast resampling, ffmpeg WebP encoding through a size-keyed persistent encoder pool (avoids ~86ms ffmpeg startup per thumbnail), ffmpeg video frame extraction with zero-seek fallback, and a pause gate that SIGSTOPs active encoders on POSIX (Windows falls back to gating new work). Verified: uncached image benchmark ~36ms/op at 100 iterations (target <50ms), video, pause/resume, cache and traversal tests; `CGO_ENABLED=0 go test ./...`, `go test -race ./internal/thumbnail/...` and `go tool mygo vet .` pass.
 
 ---
 
@@ -185,9 +186,9 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-MEDIA-SERVER: Local Media Streaming HTTP Server
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T20:05:00Z
 - Depends on: LOGIC-DB-SQLITE
 - Allowed paths/scope: `internal/server/stream/**`
 - Acceptance: HTTP 206 Range requests via `http.ServeContent`, path traversal defense, and thumbnail endpoint on port 51789.
@@ -203,12 +204,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-GDRIVE-BACKUP: Google Drive Backup Integration
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: done
+- Owner: agent-alpha
+- Updated: 2026-11-17T19:20:00Z
 - Depends on: LOGIC-DB-SQLITE
 - Allowed paths/scope: `internal/gdrive/**`
 - Acceptance: Service account JSON auth, connection validation, and online SQLite snapshot upload using `google.golang.org/api/drive/v3`.
+- Notes:
+  - 2026-11-17: Implemented Google Drive v3 client with service account credentials validation, connection verification (storage quota and folder write access), and online SQLite database snapshot backup and upload (with progress tracking and temporary file cleanup). Unit and race detector tests passed. Marked done.
 
 ---
 
@@ -311,3 +314,6 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T18:56:00Z [agent-alpha] LOGIC-SCANNER: Claimed (in_progress); starting concurrent scanner, duplicate hasher, and metadata extractor under internal/scanner/\*\*.
 - 2026-11-17T19:56:00Z [zed-agent (GLM)] UI-STATE-BRIDGE: Implemented AppState, Selection, Job tracking, event Bus, Store mutators, and internal/ui/bridge.go (bus→Window.Update forwarding); reconciled with agent-b's shell consumption of the API, removed superseded prototype files; tests, race, vet, mygo vet all pass; marked done.
 - 2026-11-17T19:05:00Z [agent-alpha] LOGIC-SCANNER: Implemented parallel walker, MIME sniffing, EXIF & video metadata extraction, SHA-256 duplicate detection, worker pool batch writer, and pause/resume lifecycle; unit and race tests passed; marked done.
+- 2026-11-17T19:15:00Z [agent-alpha] LOGIC-GDRIVE-BACKUP: Claimed (in_progress); starting Google Drive service account integration and database backup routines under internal/gdrive/**.
+- 2026-11-17T19:14:06Z [agent-b] LOGIC-THUMBNAIL: Completed (done); thumbnail service, WebP disk/memory cache, persistent ffmpeg encoder pool and SIGSTOP/SIGCONT throttler; ~36ms uncached image op, full suite and race checks pass.
+- 2026-11-17T19:20:00Z [agent-alpha] LOGIC-GDRIVE-BACKUP: Implemented Google Drive API v3 service account auth, connection/folder testing, and non-blocking SQLite snapshot upload; unit and race tests passed; marked done.
