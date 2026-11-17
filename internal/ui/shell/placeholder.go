@@ -51,8 +51,8 @@ func screenInfos() map[state.Screen]screenInfo {
 	}
 }
 
-// content hosts the active screen. The screen packages are not built yet,
-// so each one shows a titled placeholder until its task lands.
+// content hosts the active screen. Screen packages are rendered once implemented,
+// or show a titled placeholder until their task lands.
 func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 	screen := s.store.State.Screen()
 	if !screen.Valid() {
@@ -64,6 +64,14 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 			mui.Text(c, info.title).FontSize(22).FontWeight(600)
 			mui.Text(c, info.description).FontSize(13).TextColor(tk.TextSecondary)
 		})
+		if screen == state.ScreenCatalog && s.catalog != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.catalog.View(c) })
+			return
+		}
+		if screen == state.ScreenDiscover && s.discover != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.discover.View(c) })
+			return
+		}
 		mui.Scroll(c).Grow(1).Basis(0).Children(func() {
 			mui.Column(c).Fill().Center().Padding(24).Children(func() {
 				display.Empty(c, display.EmptyProps{

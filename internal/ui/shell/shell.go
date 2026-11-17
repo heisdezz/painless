@@ -6,6 +6,8 @@ import (
 	mui "github.com/egoist/mygo/ui"
 
 	"painless/internal/state"
+	"painless/internal/ui/screens/catalog"
+	"painless/internal/ui/screens/discover"
 	uitheme "painless/internal/ui/theme"
 )
 
@@ -13,8 +15,10 @@ import (
 // background results live in the state store; only presentation state, such
 // as the rail's width, belongs here.
 type Shell struct {
-	store   *state.Store
-	toaster *Toaster
+	store    *state.Store
+	toaster  *Toaster
+	catalog  *catalog.Screen
+	discover *discover.Screen
 
 	navWidth    float32
 	navExpanded bool
@@ -29,6 +33,8 @@ func New(store *state.Store) *Shell {
 	return &Shell{
 		store:       store,
 		toaster:     newToaster(store),
+		catalog:     catalog.New(catalog.Options{}),
+		discover:    discover.New(discover.Options{Store: store}),
 		navWidth:    220,
 		navExpanded: true,
 	}
@@ -39,6 +45,23 @@ func (s *Shell) Store() *state.Store { return s.store }
 
 // Toaster returns the shell's notification manager.
 func (s *Shell) Toaster() *Toaster { return s.toaster }
+
+// SetCatalog wires a media source, thumbnail renderer and action handlers
+// into the library screen. Call before the window is shown.
+func (s *Shell) SetCatalog(source catalog.Source, thumbs catalog.Thumbnailer, actions catalog.Actions) {
+	s.catalog = catalog.New(catalog.Options{Source: source, Thumbs: thumbs, Actions: actions})
+}
+
+// Catalog returns the library screen, for tests and further wiring.
+func (s *Shell) Catalog() *catalog.Screen { return s.catalog }
+
+// SetDiscover configures the discover & staging screen.
+func (s *Shell) SetDiscover(d *discover.Screen) {
+	s.discover = d
+}
+
+// Discover returns the discover & staging screen.
+func (s *Shell) Discover() *discover.Screen { return s.discover }
 
 // View builds one frame of the app shell.
 func (s *Shell) View(c *mui.Context) {

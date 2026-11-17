@@ -284,14 +284,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-DISCOVER-STAGER: Scanner Progress & Staging Review
 
-- Status: in_progress
+- Status: done
 - Owner: agent-alpha
-- Updated: 2026-11-17T19:38:00Z
+- Updated: 2026-11-17T20:00:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-SCANNER, LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/ui/screens/discover/**`
 - Acceptance: Live `feedback.Progress` bar, staging review table with `field.Select` assignments, and `overlay.Modal` confirmation for "Consolidate & Execute".
 - Notes:
-  - 2026-11-17: Claimed (in_progress) by agent-alpha. Implementing scanner control bar with feedback.Progress, staging review table with album assignment, consolidate action panel, and confirmation modal under `internal/ui/screens/discover/**`.
+  - 2026-11-17: Implemented Discover & Staging screen under `internal/ui/screens/discover/**`: scan controls with target path picker, feedback.Progress bar, and real-time stat tags; staging review table with destination field.Select and batch assignment; bottom consolidation banner with feedback.Alert; and confirmation dialog with execution progress using feedback.Modal. Hosted in shell placeholder. Unit, race, and mygo vet checks passed. Marked done.
 
 #### UI-SETTINGS-LOGS: Settings Tabs, QR Code & Diagnostic Console
 
@@ -332,3 +332,5 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T20:35:00Z [zed-agent (GLM)] LOGIC-MEDIA-SERVER: Implemented streaming server (ServeContent 206, symlink-safe sandbox + lexical path guard, RepoResolver, /thumbnail, /health, port 51789, graceful shutdown); race tests, full suite, mygo vet pass; marked done. Claimed LOGIC-MOBILE-SYNC (dependencies LOGIC-DB-SQLITE + LOGIC-THUMBNAIL now done).
 - 2026-11-17T21:10:00Z [zed-agent (GLM)] LOGIC-MOBILE-SYNC: Implemented mobile REST API (constant-time bearer auth, status/ping/albums/media endpoints, streaming multipart+raw upload with on-drive temp hashing, hash dedupe, 2 GiB cap, album targeting, async thumbnail warm, /stream mount, LAN pairing address, port 51790); race tests, full suite, mygo vet pass; marked done.
 - 2026-11-17T19:38:00Z [agent-alpha] UI-DISCOVER-STAGER: Claimed (in_progress); starting Discover & Staging screen implementation under internal/ui/screens/discover/\*\*.
+- 2026-11-17T19:55:21Z [agent-b] UI-CATALOG-GRID: Completed (review); catalog screen implemented and hosted in the shell; tests, race checks, full suite and mygo vet pass. Real DB/drive wiring into Shell.SetCatalog remains a follow-up.
+- 2026-11-17T20:00:00Z [agent-alpha] UI-DISCOVER-STAGER: Implemented scanner controls with progress gauge, staging review table with album assignment, consolidation banner, and execution modal; unit, race, and mygo vet checks passed; marked done.
