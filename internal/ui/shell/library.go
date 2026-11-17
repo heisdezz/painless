@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"os"
 
 	"painless/internal/domain"
 	"painless/internal/scanner"
@@ -10,23 +11,49 @@ import (
 	"painless/internal/thumbnail"
 	"painless/internal/ui/screens/albums"
 	"painless/internal/ui/screens/discover"
+	"painless/internal/ui/screens/viewer"
 )
 
 // libraryActions routes catalog commands to the screens that own them. Start
 // Scan and Delete open Discover, where the work is reviewed before it touches
-// the disk.
+// the disk. OpenInViewer and Inspect open the media viewer.
 type libraryActions struct {
 	store    *state.Store
 	media    *storage.MediaRepo
 	discover *discover.Screen
+	viewer   *viewer.Screen
 }
 
-func (a libraryActions) OpenInViewer(domain.MediaItem) {}
-func (a libraryActions) AssignToAlbum([]int64)         {}
-func (a libraryActions) RemoveFromAlbum([]int64)       {}
-func (a libraryActions) Reveal(domain.MediaItem)       {}
-func (a libraryActions) Inspect(domain.MediaItem)      {}
-func (a libraryActions) StartScan()                    { a.store.Navigate(state.ScreenDiscover) }
+// openViewer loads an item into the viewer screen and navigates to it.
+func (a libraryActions) openViewer(id int64) {
+	if a.viewer != nil {
+		a.viewer.Open(id)
+	}
+	a.store.Navigate(state.ScreenViewer)
+}
+
+func (a libraryActions) OpenInViewer(item domain.MediaItem) { a.openViewer(item.ID) }
+func (a libraryActions) AssignToAlbum([]int64)              {}
+func (a libraryActions) RemoveFromAlbum([]int64)            {}
+func (a libraryActions) Reveal(domain.MediaItem)            {}
+func (a libraryActions) Inspect(item domain.MediaItem)      { a.openViewer(item.ID) }
+func (a libraryActions) StartScan()                         { a.store.Navigate(state.ScreenDiscover) }
+
+// newViewer builds a viewer screen; nil dependencies yield a viewer that
+// shows its empty state until the library controller binds a drive.
+func newViewer(store *state.Store, redraw func(), root string, source viewer.Source, throttle viewer.Throttler) *viewer.Screen {
+	return viewer.New(viewer.Options{
+		DriveRoot:     root,
+		Source:        source,
+		Throttler:     throttle,
+		RefreshWindow: redraw,
+		OnClose: func() {
+			if store != nil {
+				store.Navigate(state.ScreenCatalog)
+			}
+		},
+	})
+}
 
 // Delete stages the chosen items for deletion rather than removing them now.
 func (a libraryActions) Delete(ids []int64) {
@@ -70,6 +97,7 @@ func (l *libraryController) HandleEvent(event state.Event) {
 			c.Reload()
 		}
 		l.shell.Albums().Reload()
+		l.shell.Dashboard().Reload()
 	case state.EventScreenChanged:
 		if l.store.State.Screen() == state.ScreenDiscover {
 			l.shell.Discover().ReloadAlbums()
@@ -103,18 +131,27 @@ func (l *libraryController) sync() {
 	var screen *discover.Screen
 	if !db.IsReadOnly() {
 		opts.ScannerFactory = func(cfg scanner.Config, progress func(scanner.Progress)) discover.Scanner {
-			return scanner.New(cfg, scanInserter{mediaRepo, screen.QueueDiscovered}, progress)
+			return scanner.New(cfg, scanInserter{MediaRepo: mediaRepo, queue: screen.QueueDiscovered}, progress)
+		}
+		opts.AlbumScannerFactory = func(cfg scanner.Config, progress func(scanner.Progress)) discover.Scanner {
+			return scanner.New(cfg, scanInserter{MediaRepo: mediaRepo}, progress)
 		}
 	}
 	screen = discover.New(opts)
 	screen.ReloadAlbums()
 	l.shell.SetDiscover(screen)
-	l.shell.SetCatalog(mediaRepo, thumbs, libraryActions{store: l.store, media: mediaRepo, discover: screen})
+	l.shell.SetViewer(newViewer(l.store, l.redraw, drive.Path, mediaRepo, thumbs.Throttler()))
+	l.shell.SetCatalog(mediaRepo, thumbs, libraryActions{store: l.store, media: mediaRepo, discover: screen, viewer: l.shell.Viewer()})
 	l.syncDashboard(drive, mediaRepo, albumRepo, thumbs)
 	l.shell.SetAlbums(albums.New(albums.Options{
 		Albums: albumRepository{albumRepo}, Media: mediaRepo, Thumbs: thumbs,
 		DriveRoot: drive.Path, ReadOnly: db.IsReadOnly(),
 	}))
+	if opts.AlbumScannerFactory != nil {
+		if info, err := os.Stat(screen.AlbumFolder()); err == nil && info.IsDir() {
+			screen.RescanAlbumFolder()
+		}
+	}
 }
 
 // Close detaches the old screens immediately, then releases the database
@@ -124,6 +161,7 @@ func (l *libraryController) Close() {
 	l.shell.SetDiscover(discover.New(discover.Options{}))
 	l.shell.SetAlbums(albums.New(albums.Options{}))
 	l.shell.SetCatalog(nil, nil, libraryActions{store: l.store})
+	l.shell.SetViewer(newViewer(l.store, l.redraw, "", nil, nil))
 	l.resetDashboard()
 	if l.thumbs != nil {
 		l.thumbs.Close()
@@ -167,6 +205,10 @@ type scanInserter struct {
 }
 
 func (r scanInserter) InsertBatch(ctx context.Context, items []domain.MediaItem) error {
+	if r.queue == nil {
+		_, err := r.MediaRepo.InsertBatch(ctx, items)
+		return err
+	}
 	inserted, err := r.MediaRepo.InsertScanBatch(ctx, items)
 	if err == nil {
 		r.queue(inserted)

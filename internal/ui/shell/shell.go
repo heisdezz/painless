@@ -14,6 +14,7 @@ import (
 	"painless/internal/ui/screens/dashboard"
 	"painless/internal/ui/screens/discover"
 	"painless/internal/ui/screens/settings"
+	"painless/internal/ui/screens/viewer"
 	uitheme "painless/internal/ui/theme"
 )
 
@@ -28,6 +29,7 @@ type Shell struct {
 	dashboard *dashboard.Screen
 	discover  *discover.Screen
 	settings  *settings.Screen
+	viewer    *viewer.Screen
 	drives    *driveController
 
 	logger      *logging.Logger
@@ -51,6 +53,7 @@ func New(store *state.Store) *Shell {
 		discover:    discover.New(discover.Options{Store: store}),
 		logger:      logger,
 		settings:    settings.New(settings.Options{Logs: logger, Toast: store.Notify}),
+		viewer:      newViewer(store, nil, "", nil, nil),
 		navWidth:    220,
 		navExpanded: true,
 	}
@@ -101,6 +104,14 @@ func (s *Shell) SetDiscover(d *discover.Screen) {
 
 // Discover returns the discover & staging screen.
 func (s *Shell) Discover() *discover.Screen { return s.discover }
+
+// SetViewer configures the media viewer screen.
+func (s *Shell) SetViewer(v *viewer.Screen) {
+	s.viewer = v
+}
+
+// Viewer returns the media viewer screen, for tests and further wiring.
+func (s *Shell) Viewer() *viewer.Screen { return s.viewer }
 
 // Logger returns the process-wide UI logger, for services and screens to
 // write diagnostic entries into the logs console.

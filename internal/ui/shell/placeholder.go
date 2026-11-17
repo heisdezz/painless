@@ -54,6 +54,12 @@ func screenInfos() map[state.Screen]screenInfo {
 			"No log entries",
 			lucide.ScrollText,
 		},
+		state.ScreenViewer: {
+			"Viewer",
+			"Inspect a photo or play a video from the library.",
+			"Nothing open",
+			lucide.Image,
+		},
 	}
 }
 
@@ -70,10 +76,14 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 			mui.Text(c, info.title).FontSize(22).FontWeight(600)
 			mui.Text(c, info.description).FontSize(13).TextColor(tk.TextSecondary)
 		})
-		// The dashboard paints its own header card, so it takes the whole
-		// content area without the generic screen heading.
+		// The dashboard and viewer paint their own headers, so they take the
+		// whole content area without the generic screen heading.
 		if screen == state.ScreenDashboard && s.dashboard != nil {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.dashboard.View(c) })
+			return
+		}
+		if screen == state.ScreenViewer && s.viewer != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.viewer.View(c) })
 			return
 		}
 		if screen == state.ScreenCatalog && s.catalog != nil {

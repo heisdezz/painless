@@ -5,11 +5,11 @@ import (
 	"sort"
 
 	"painless/internal/domain"
-	"painless/internal/fileops"
 	"painless/internal/state"
 	"painless/internal/storage"
 	"painless/internal/thumbnail"
 	"painless/internal/ui/screens/dashboard"
+	"painless/internal/ui/screens/viewer"
 )
 
 // Compile-time proof the adapters satisfy the dashboard screen contracts.
@@ -29,10 +29,10 @@ func (l *libraryController) redraw() {
 
 // dashboardSource feeds the dashboard from the active drive's repositories.
 type dashboardSource struct {
-	store  *state.Store
-	media  *storage.MediaRepo
-	albums *storage.AlbumRepo
-	root   string
+	store       *state.Store
+	media       *storage.MediaRepo
+	albums      *storage.AlbumRepo
+	albumFolder func() string
 }
 
 // GetDashboardStats aggregates media counts, album count, disk usage and
@@ -49,7 +49,7 @@ func (d dashboardSource) GetDashboardStats(ctx context.Context) (dashboard.Stats
 		return dashboard.Stats{}, err
 	}
 	stats.TotalAlbums = int64(len(albums))
-	stats.AlbumLocation = fileops.AlbumsDir(d.root)
+	stats.AlbumLocation = d.albumFolder()
 
 	if drive, ok := d.store.State.ActiveDrive(); ok {
 		stats.StorageTotal = drive.TotalBytes
@@ -100,6 +100,7 @@ func (d dashboardDrives) ListDrives(ctx context.Context) ([]domain.DriveInfo, er
 // dashboardActions routes dashboard commands into the store.
 type dashboardActions struct {
 	store  *state.Store
+	viewer *viewer.Screen
 	reload func() // refreshes the dashboard data itself
 }
 
@@ -108,10 +109,12 @@ func (a dashboardActions) NavigateToMedia()           { a.store.Navigate(state.S
 func (a dashboardActions) NavigateToAlbums()          { a.store.Navigate(state.ScreenAlbums) }
 func (a dashboardActions) NavigateToDiscover()        { a.store.Navigate(state.ScreenDiscover) }
 
-// OpenViewer deep-links into the library for now; the viewer screen will
-// take a direct item once it exposes an Open accessor.
+// OpenViewer deep-links into the viewer screen for the chosen item.
 func (a dashboardActions) OpenViewer(item domain.MediaItem, all []domain.MediaItem) {
-	a.store.Navigate(state.ScreenCatalog)
+	if a.viewer != nil {
+		a.viewer.Open(item.ID)
+	}
+	a.store.Navigate(state.ScreenViewer)
 }
 
 func (a dashboardActions) OpenAlbum(album domain.AlbumSummary) {
@@ -136,12 +139,16 @@ func (a dashboardActions) Refresh() {
 func (l *libraryController) syncDashboard(drive domain.DriveInfo, mediaRepo *storage.MediaRepo, albumRepo *storage.AlbumRepo, thumbs *thumbnail.Service) {
 	screen := dashboard.New(dashboard.Options{
 		Source: dashboardSource{
-			store: l.store, media: mediaRepo, albums: albumRepo, root: drive.Path,
+			store:       l.store,
+			media:       mediaRepo,
+			albums:      albumRepo,
+			albumFolder: l.shell.Discover().AlbumFolder,
 		},
 		DriveSource: dashboardDrives{store: l.store},
 		Thumbs:      thumbs,
 		Actions: dashboardActions{
 			store:  l.store,
+			viewer: l.shell.Viewer(),
 			reload: func() { l.shell.Dashboard().Reload() },
 		},
 		RefreshWindow: l.redraw,
