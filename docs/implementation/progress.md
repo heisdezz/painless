@@ -428,6 +428,18 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
   - 2026-11-17T23:31:20Z: Claimed by zed-agent (GLM). Found during review pass:  - 2026-11-17T23:41:54Z: Done. `state`: `ScreenViewer` registered in `Valid()` as a transient screen (not in sidebar `AllScreens`). `shell`: viewer field + `SetViewer`/`Viewer` accessors, default instance in `New`, full-bleed content routing in placeholder.go with a screenInfos fallback entry. `libraryController.sync` builds a per-drive viewer (`DriveRoot: drive.Path`, `Source: mediaRepo`, `Throttler: thumbs.Throttler()`, OnClose returns to catalog) and `Close` resets it; `libraryActions.OpenInViewer`/`Inspect` now call `viewer.Open(item.ID)` + navigate; dashboard `OpenViewer` deep-links the same way (dashboardActions gained a viewer field fed from syncDashboard). Test `viewer_hosting_test.go` covers catalog deep-link render (filename in top bar), Close-to-catalog, dashboard action and nil-viewer navigation. Verified: full suite green, `-race` on state/viewer/shell green, `go tool mygo vet .` clean on state/shell/viewer, go vet + gofmt clean.
  UI-MEDIA-VIEWER shipped a complete viewer package (Open(id)/Close/EXIF drawer) that no screen routes to — no `ScreenViewer` in state, shell placeholder has no viewer branch, and `libraryActions.OpenInViewer`/`Inspect` plus dashboard `OpenViewer` are stubs. Disjoint from agent-b's active discover edits (touches state/screen.go, shell placeholder/shell.go/library.go/dashboard_source.go only, all committed-stable).
 
+#### SYS-DISCOVER-CATALOG-COUNT: Feed Live Cataloged Count into Discover Status
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T23:54:33Z
+- Depends on: UI-DISCOVER-ADVANCED, SYS-LIBRARY-WIRING
+- Allowed paths/scope: `internal/ui/shell/library.go` (additive), `internal/ui/shell/*_test.go`
+- Acceptance: libraryController supplies discover's `CatalogCount` hook when binding a drive, backed by a short-TTL cached media count so per-frame rendering does not hammer SQLite; the Scanner Status panel shows the real cataloged total; tests + full suite + race green.
+- Notes:
+  - 2026-11-17T23:49:31Z: Claimed by zed-agent (GLM). Follow-up explicitly deferred by agent-b in UI-DISCOVER-ADVANCED; the hook already exists on discover.Options, only the shell wiring is missing.
+  - 2026-11-17T23:54:33Z: Done. libraryController.sync now sets `opts.CatalogCount` via a new `cachedMediaCount(mediaRepo)` helper: a 500ms-TTL cached `MediaRepo.List{Limit:1}.Total` so the per-frame Scanner Status panel does not query SQLite on every render (errors keep the last value). New drive rebuilds the closure; tests in `discover_count_test.go` assert the rendered 'SQLite Cataloged' value and the cache helper. Verified: shell tests + `-race` + `go tool mygo vet .` + gofmt green; full suite green except `TestCatalogSelectionAndBatchAction` in internal/ui/screens/catalog, which another agent is actively editing (uncommitted catalog_view/filter_bar/media_card changes) - not related to this change.
+
 ---
 
 ## 4. Activity Log
@@ -487,3 +499,5 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T23:31:20Z [zed-agent (GLM)] UI-VIEWER-HOSTING: Created and claimed (in_progress); hosting the viewer screen in the shell and wiring catalog OpenInViewer/Inspect + dashboard OpenViewer deep-links.
 - 2026-11-17T23:41:54Z [zed-agent (GLM)] UI-VIEWER-HOSTING: Done. Viewer screen now hosted in the shell (transient ScreenViewer, full-bleed) and reachable via catalog OpenInViewer/Inspect and dashboard OpenViewer deep-links; per-drive viewer rebuilt on drive switch, Close returns to catalog. Full suite, race, mygo vet and gofmt green.
 - 2026-11-17T23:48:49Z [zed-agent (GLM)] UI-DISCOVER-ADVANCED: Verified agent-b's review-state work (full suite, race -count=3 on discover/scanner, mygo vet) and committed it as 515a5e4 / 19b08f5 / c4f18ad; task marked done. Remaining known follow-up: feed discover.CatalogCount from libraryController.
+- 2026-11-17T23:49:31Z [zed-agent (GLM)] SYS-DISCOVER-CATALOG-COUNT: Created and claimed (in_progress); feeding the discover CatalogCount hook from libraryController with a TTL-cached media count.
+- 2026-11-17T23:54:33Z [zed-agent (GLM)] SYS-DISCOVER-CATALOG-COUNT: Done. Discover Scanner Status panel now shows the live SQLite cataloged total via a 500ms-TTL cached count wired from libraryController. Heads-up to the agent editing internal/ui/screens/catalog: TestCatalogSelectionAndBatchAction currently fails on your in-flight uncommitted changes (click-to-select).

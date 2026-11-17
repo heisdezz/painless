@@ -3,6 +3,7 @@ package shell
 import (
 	"context"
 	"os"
+	"time"
 
 	"painless/internal/domain"
 	"painless/internal/scanner"
@@ -128,6 +129,7 @@ func (l *libraryController) sync() {
 
 	opts := discover.Options{Store: l.store, DriveRoot: drive.Path, Update: l.update,
 		AlbumSource: albumRepo, MediaStore: mediaRepo, AlbumStore: albumRepo}
+	opts.CatalogCount = cachedMediaCount(mediaRepo)
 	var screen *discover.Screen
 	if !db.IsReadOnly() {
 		opts.ScannerFactory = func(cfg scanner.Config, progress func(scanner.Progress)) discover.Scanner {
@@ -173,6 +175,27 @@ func (l *libraryController) Close() {
 		}()
 	}
 	l.db, l.thumbs, l.drive, l.root = nil, nil, "", ""
+}
+
+// cachedMediaCount backs discover's CatalogCount hook with a 500ms-TTL
+// cached count so the per-frame status panel does not query SQLite on every
+// render. Only the UI thread invokes the returned closure.
+func cachedMediaCount(media *storage.MediaRepo) func() int {
+	var (
+		queried time.Time
+		total   int
+	)
+	return func() int {
+		if time.Since(queried) < 500*time.Millisecond {
+			return total
+		}
+		page, err := media.List(context.Background(), domain.MediaListParams{Limit: 1})
+		if err != nil {
+			return total
+		}
+		queried, total = time.Now(), page.Total
+		return total
+	}
 }
 
 type albumRepository struct{ *storage.AlbumRepo }
