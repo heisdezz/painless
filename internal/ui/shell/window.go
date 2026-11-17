@@ -9,6 +9,7 @@ import (
 	"painless/internal/drive"
 	"painless/internal/state"
 	uibridge "painless/internal/ui"
+	"painless/internal/wiring"
 )
 
 const stateKey = "painless_main_window"
@@ -33,6 +34,8 @@ func (s *Shell) WindowOptions() mygo.WindowOptions {
 func Open() *mygo.Window {
 	store := state.NewStore()
 	shell := New(store)
+	controllers := wiring.New(store)
+	shell.SetSettings(controllers.SettingsScreen(shell.Logger(), store.Notify))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	drives := drive.NewService()
@@ -57,6 +60,7 @@ func Open() *mygo.Window {
 		cancel()
 		monitor.Stop()
 		library.Close()
+		controllers.Close()
 		cancelBridge()
 	})
 	return win

@@ -181,7 +181,9 @@ func (s *Screen) View(c *mui.Context) {
 	_ = lobetheme.TokensOf(c)
 	s.drainAsync()
 	s.syncMobile()
-	mui.Column(c).Fill().Gap(12).Children(func() {
+	// Match the 28 DIP horizontal padding of the shell's screen heading so
+	// the tabs and each tab's controls line up with the title.
+	mui.Column(c).Fill().Padding(0, 28, 24).Gap(12).Children(func() {
 		nav.Tabs(c, &s.tab, nav.TabsProps{
 			Items:   tabItems,
 			Variant: nav.TabsSquare,
