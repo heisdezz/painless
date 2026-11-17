@@ -4,6 +4,7 @@ package discover
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
 	mui "github.com/egoist/mygo/ui"
@@ -57,29 +58,41 @@ type Options struct {
 	Store          *state.Store
 	Stager         Stager
 	ScannerFactory ScannerFactory
-	AlbumSource    AlbumSource
-	MediaStore     fileops.MediaStore
-	AlbumStore     fileops.AlbumStore
-	RefreshWindow  func()
-	Update         func(func()) // Dispatches worker results to the UI thread.
-	DriveRoot      string
+	// AlbumScannerFactory indexes in-place library media without staging it.
+	AlbumScannerFactory ScannerFactory
+	AlbumSource         AlbumSource
+	MediaStore          fileops.MediaStore
+	AlbumStore          fileops.AlbumStore
+	RefreshWindow       func()
+	Update              func(func()) // Dispatches worker results to the UI thread.
+	DriveRoot           string
+	// CatalogCount reports how many items are indexed on the active drive.
+	CatalogCount func() int
+	// DirectoryPicker opens a native folder chooser. Injected in tests.
+	DirectoryPicker func(defaultPath string) (string, error)
 }
 
 // Screen coordinates the scanner, staging table, and consolidation modal.
 type Screen struct {
-	store          *state.Store
-	stager         Stager
-	scannerFactory ScannerFactory
-	albumSource    AlbumSource
-	mediaStore     fileops.MediaStore
-	albumStore     fileops.AlbumStore
-	refreshWindow  func()
-	update         func(func())
-	driveRoot      string
-	ctx            context.Context
-	cancel         context.CancelFunc
-	jobs           sync.WaitGroup
-	closed         bool
+	store               *state.Store
+	stager              Stager
+	scannerFactory      ScannerFactory
+	albumScannerFactory ScannerFactory
+	albumSource         AlbumSource
+	mediaStore          fileops.MediaStore
+	albumStore          fileops.AlbumStore
+	refreshWindow       func()
+	update              func(func())
+	driveRoot           string
+	albumFolder         string
+	ignoreRules         []string
+	ignoreInput         string
+	catalogCount        func() int
+	directoryPicker     func(defaultPath string) (string, error)
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	jobs                sync.WaitGroup
+	closed              bool
 
 	// Scanner state
 	targetPath  string
@@ -117,22 +130,30 @@ func New(opts Options) *Screen {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	albumFolder := ""
+	if opts.DriveRoot != "" {
+		albumFolder = filepath.Join(opts.DriveRoot, "media", "albums")
+	}
 	return &Screen{
-		ctx:            ctx,
-		cancel:         cancel,
-		update:         opts.Update,
-		driveRoot:      opts.DriveRoot,
-		targetPath:     opts.DriveRoot,
-		store:          opts.Store,
-		stager:         stager,
-		scannerFactory: opts.ScannerFactory,
-		albumSource:    opts.AlbumSource,
-		mediaStore:     opts.MediaStore,
-		albumStore:     opts.AlbumStore,
-		refreshWindow:  opts.RefreshWindow,
-		albumMap:       make(map[string]int64),
-		stagedOps:      stager.ListOperations(),
-		summary:        stager.Summary(),
+		ctx:                 ctx,
+		cancel:              cancel,
+		update:              opts.Update,
+		driveRoot:           opts.DriveRoot,
+		albumFolder:         albumFolder,
+		targetPath:          opts.DriveRoot,
+		catalogCount:        opts.CatalogCount,
+		directoryPicker:     opts.DirectoryPicker,
+		store:               opts.Store,
+		stager:              stager,
+		scannerFactory:      opts.ScannerFactory,
+		albumScannerFactory: opts.AlbumScannerFactory,
+		albumSource:         opts.AlbumSource,
+		mediaStore:          opts.MediaStore,
+		albumStore:          opts.AlbumStore,
+		refreshWindow:       opts.RefreshWindow,
+		albumMap:            make(map[string]int64),
+		stagedOps:           stager.ListOperations(),
+		summary:             stager.Summary(),
 	}
 }
 
@@ -143,10 +164,21 @@ func (s *Screen) View(c *mui.Context) {
 
 	container := mui.Column(c).Fill().Padding(20, 24).Gap(16)
 	container.Children(func() {
-		// 1. Scanner controls & live progress bar
-		s.scanControls(c, tk)
+		// 1. Active drive banner and configurable album folder
+		s.driveBanner(c, tk)
+		s.scaffoldBanner(c, tk)
+		s.albumFolderCard(c, tk)
 
-		// 2. Virtual staging review table
+		// 2. Scanner controls, ignorelist and live telemetry side by side
+		mui.Row(c).Shrink(0).Gap(16).AlignItems(mui.Start).Children(func() {
+			mui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(16).Children(func() {
+				s.scanControls(c, tk)
+				s.ignoreList(c, tk)
+			})
+			mui.Column(c).Width(280).Shrink(0).Children(func() { s.scannerStatus(c, tk) })
+		})
+
+		// 3. Virtual staging review table
 		mui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
 			if !s.isExecuting {
 				s.stagingTable(c, tk)

@@ -25,6 +25,8 @@ type Config struct {
 	TargetDir   string
 	WorkerCount int
 	BatchSize   int
+	// Ignore holds custom directory-name patterns from the Discover screen.
+	Ignore []string
 }
 
 // Progress tracks real-time progress and discovery statistics during scanning.
@@ -269,7 +271,10 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 	// 3. Walk directory in caller goroutine
 	walkErr := filepath.WalkDir(scanRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // Skip unreadable entries and continue
+			if path == scanRoot {
+				return err
+			}
+			return nil // Skip unreadable descendants and continue.
 		}
 
 		if err := s.checkPause(ctx); err != nil {
@@ -277,7 +282,7 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 		}
 
 		if d.IsDir() {
-			if ShouldIgnoreDir(d.Name()) {
+			if path != scanRoot && ShouldIgnoreDirWith(d.Name(), s.config.Ignore) {
 				return filepath.SkipDir
 			}
 			return nil

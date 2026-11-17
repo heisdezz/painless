@@ -19,6 +19,11 @@ import (
 )
 
 func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
+	s.mu.RLock()
+	scanning, paused := s.isScanning, s.isPaused
+	progress, scanErr := s.scanProg, s.lastScanErr
+	s.mu.RUnlock()
+
 	mui.Column(c).Shrink(0).Gap(10).Children(func() {
 		// 1. Target path input & control buttons
 		mui.Row(c).Gap(12).AlignItems(mui.Center).Children(func() {
@@ -29,7 +34,7 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 				}).Width(360)
 			})
 
-			if !s.isScanning {
+			if !scanning {
 				action.Button(c, "Start Scan", action.ButtonProps{
 					Variant: action.Primary,
 					Size:    lobetheme.Small,
@@ -37,7 +42,7 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 					s.startScan()
 				})
 			} else {
-				if s.isPaused {
+				if paused {
 					action.Button(c, "Resume", action.ButtonProps{
 						Variant: action.Default,
 						Size:    lobetheme.Small,
@@ -63,12 +68,12 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 		})
 
 		// 2. Active scan progress bar and status tags
-		if s.isScanning {
+		if scanning {
 			mui.Column(c).Gap(6).Padding(8, 0).Children(func() {
 				var pct float32 = 0
-				if s.scanProg.FilesScanned > 0 {
+				if progress.FilesScanned > 0 {
 					// Approximate progress pulse
-					pct = float32(s.scanProg.FilesScanned%100) + 1
+					pct = float32(progress.FilesScanned%100) + 1
 				}
 
 				feedback.Progress(c, pct, feedback.ProgressProps{
@@ -80,31 +85,31 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 
 				// Real-time stat counters
 				mui.Row(c).Gap(8).AlignItems(mui.Center).Children(func() {
-					display.Tag(c, fmt.Sprintf("%d scanned", s.scanProg.FilesScanned), display.TagProps{
+					display.Tag(c, fmt.Sprintf("%d scanned", progress.FilesScanned), display.TagProps{
 						Size:  lobetheme.Small,
 						Color: display.TagBlue,
 					})
-					display.Tag(c, fmt.Sprintf("%d discovered", s.scanProg.MediaFound), display.TagProps{
+					display.Tag(c, fmt.Sprintf("%d discovered", progress.MediaFound), display.TagProps{
 						Size:  lobetheme.Small,
 						Color: display.TagGreen,
 					})
-					if s.scanProg.Duplicates > 0 {
+					if progress.Duplicates > 0 {
 						display.Tag(c, fmt.Sprintf("%d duplicates", s.scanProg.Duplicates), display.TagProps{
 							Size:  lobetheme.Small,
 							Color: display.TagOrange,
 						})
 					}
 
-					if s.scanProg.CurrentPath != "" {
-						base := filepath.Base(s.scanProg.CurrentPath)
+					if progress.CurrentPath != "" {
+						base := filepath.Base(progress.CurrentPath)
 						mui.Text(c, base).FontSize(11).TextColor(tk.TextTertiary).SingleLine()
 					}
 				})
 			})
 		}
 
-		if s.lastScanErr != "" {
-			feedback.Alert(c, s.lastScanErr, feedback.AlertProps{
+		if scanErr != "" {
+			feedback.Alert(c, scanErr, feedback.AlertProps{
 				Type:    feedback.Error,
 				Variant: feedback.Soft,
 			})
@@ -114,12 +119,15 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 
 func (s *Screen) startScan() {
 	s.mu.Lock()
-	if s.closed || s.isScanning || s.isExecuting || s.scannerFactory == nil {
-		s.mu.Unlock()
+	s.startScanLocked(s.targetPath, s.scannerFactory, false)
+	s.mu.Unlock()
+	s.requestRedraw()
+}
+
+func (s *Screen) startScanLocked(target string, factory ScannerFactory, albumScan bool) {
+	if s.closed || s.isScanning || s.isExecuting || factory == nil {
 		return
 	}
-
-	target := s.targetPath
 	if target == "" && s.store != nil {
 		if drive, ok := s.store.State.ActiveDrive(); ok {
 			target = drive.Path
@@ -127,8 +135,6 @@ func (s *Screen) startScan() {
 	}
 	if target == "" {
 		s.lastScanErr = "Please select or enter a target directory to scan."
-		s.mu.Unlock()
-		s.requestRedraw()
 		return
 	}
 
@@ -140,8 +146,6 @@ func (s *Screen) startScan() {
 		target, err = scanDirectory(root, target)
 		if err != nil {
 			s.lastScanErr = err.Error()
-			s.mu.Unlock()
-			s.requestRedraw()
 			return
 		}
 	}
@@ -153,7 +157,11 @@ func (s *Screen) startScan() {
 	s.scanProg = scanner.Progress{IsRunning: true}
 
 	var lastProgress time.Time
-	sc := s.scannerFactory(scanner.Config{DriveRoot: root, TargetDir: target}, func(p scanner.Progress) {
+	sc := factory(scanner.Config{
+		DriveRoot: root,
+		TargetDir: target,
+		Ignore:    s.ignorePatterns(),
+	}, func(p scanner.Progress) {
 		// A scan can report once per file; don't flood the window queue.
 		if p.IsRunning && time.Since(lastProgress) < 50*time.Millisecond {
 			return
@@ -163,7 +171,6 @@ func (s *Screen) startScan() {
 	})
 	s.activeScan = sc
 	s.jobs.Add(1)
-	s.mu.Unlock()
 
 	go func() {
 		defer s.jobs.Done()
@@ -178,10 +185,12 @@ func (s *Screen) startScan() {
 			if err != nil && !stopped {
 				s.lastScanErr = fmt.Sprintf("Scan failed: %v", err)
 			}
+			if albumScan && s.store != nil {
+				// A canceled or failed scan can still have committed earlier batches.
+				s.store.MediaChanged("")
+			}
 		})
 	}()
-
-	s.requestRedraw()
 }
 
 func scanDirectory(root, target string) (string, error) {
