@@ -198,12 +198,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-MOBILE-SYNC: Mobile Companion REST & Upload API
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GLM)
-- Updated: 2026-11-17T20:35:00Z
+- Updated: 2026-11-17T21:10:00Z
 - Depends on: LOGIC-DB-SQLITE, LOGIC-THUMBNAIL
 - Allowed paths/scope: `internal/server/mobile/**`
 - Acceptance: Authenticated REST endpoints (constant-time token check), direct-to-disk streaming multipart upload, and LAN IP pairing.
+- Notes:
+  - 2026-11-17: Implemented `internal/server/mobile`: `Server` (Start/Shutdown/Addr/SetDriveRoot, DefaultPort 51790) with `crypto/subtle` constant-time Bearer auth (writes always require token; reads optional via ProtectReads; ping stays open for pre-pairing checks; empty configured token fails closed 503); CORS preflight handling; `/api/status` (drive snapshot + LAN address for QR pairing), `/api/ping`, `/api/albums` GET/POST, `/api/media` paginated+filtered, `/api/media/{id}`; `POST /api/upload` streams multipart file part or raw body (X-File-Name/X-Album-ID headers) to a temp file directly on the drive while SHA-256 hashing, 2 GiB cap (MaxBytesReader + per-file limit → 413), library dedupe by hash (200 duplicate), fileops.SanitizeFilename/ResolveCollision/MoveFile, cataloged via MediaRepo.InsertBatch, background thumbnail warm via ThumbnailWarmer interface; optional stream handler mounted at /stream for playback; LANAddress() prefers RFC1918 IPv4.
+  - 2026-11-17: Verified: `go test -race ./internal/server/...` pass; `go test ./...` all green; `go tool mygo vet .` clean; gofmt clean. Files all <300 LOC.
 
 #### LOGIC-GDRIVE-BACKUP: Google Drive Backup Integration
 
@@ -251,14 +254,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-CATALOG-GRID: Media Catalog GridView with SearchBar & Segmented
 
-- Status: in_progress
+- Status: review
 - Owner: agent-b
-- Updated: 2026-11-17T19:24:31Z
+- Updated: 2026-11-17T19:55:21Z
 - Depends on: UI-SHELL-NAV, LOGIC-THUMBNAIL, LOGIC-MEDIA-REPO
 - Allowed paths/scope: `internal/ui/screens/catalog/**`
 - Acceptance: Virtualized `ui.GridView`, `field.SearchBar` (debounced), `choice.Segmented` (type filter), `field.Select` (sort), `display.Empty`, `nav.ContextMenu`, and multi-selection (Ctrl/Shift/Cmd+A).
 - Notes:
   - 2026-11-17T19:24:31Z: Claimed task. Building the media catalog screen; scope may expand to wire it into the shell's content area once the screen is ready.
+  - 2026-11-17T19:55:21Z: Screen complete under `internal/ui/screens/catalog/**` (catalog view, filter bar, card, context menu, batch bar) with injected Source/Thumbnailer/Actions interfaces and tests for rendering, filter, debounced search (Ctrl+F), empty state, right-click menu, multi-selection and async thumbnails. Scope expansion: `internal/ui/shell/shell.go` gained SetCatalog/Catalog and `internal/ui/shell/placeholder.go` hosts the screen. Verified `CGO_ENABLED=0 go test ./...`, `go test -race ./internal/ui/screens/catalog/... ./internal/ui/shell/...`, `go tool mygo vet .`, plus rendered Tester frames. Remaining integration: `main.go` still uses the empty default source — wiring drive detection → SQLite DB → MediaRepo + thumbnail.Service through `Shell.SetCatalog` is a follow-up integration task.
 
 #### UI-ALBUM-GALLERY: Album Gallery & Lobe Modals
 
@@ -280,12 +284,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-DISCOVER-STAGER: Scanner Progress & Staging Review
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: in_progress
+- Owner: agent-alpha
+- Updated: 2026-11-17T19:38:00Z
 - Depends on: UI-SHELL-NAV, LOGIC-SCANNER, LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/ui/screens/discover/**`
 - Acceptance: Live `feedback.Progress` bar, staging review table with `field.Select` assignments, and `overlay.Modal` confirmation for "Consolidate & Execute".
+- Notes:
+  - 2026-11-17: Claimed (in_progress) by agent-alpha. Implementing scanner control bar with feedback.Progress, staging review table with album assignment, consolidate action panel, and confirmation modal under `internal/ui/screens/discover/**`.
 
 #### UI-SETTINGS-LOGS: Settings Tabs, QR Code & Diagnostic Console
 
@@ -324,3 +330,5 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T19:24:31Z [agent-b] UI-CATALOG-GRID: Claimed (in_progress); implementing the virtualized media catalog screen with search, filters, selection and context menu.
 - 2026-11-17T19:20:00Z [agent-alpha] LOGIC-GDRIVE-BACKUP: Implemented Google Drive API v3 service account auth, connection/folder testing, and non-blocking SQLite snapshot upload; unit and race tests passed; marked done.
 - 2026-11-17T20:35:00Z [zed-agent (GLM)] LOGIC-MEDIA-SERVER: Implemented streaming server (ServeContent 206, symlink-safe sandbox + lexical path guard, RepoResolver, /thumbnail, /health, port 51789, graceful shutdown); race tests, full suite, mygo vet pass; marked done. Claimed LOGIC-MOBILE-SYNC (dependencies LOGIC-DB-SQLITE + LOGIC-THUMBNAIL now done).
+- 2026-11-17T21:10:00Z [zed-agent (GLM)] LOGIC-MOBILE-SYNC: Implemented mobile REST API (constant-time bearer auth, status/ping/albums/media endpoints, streaming multipart+raw upload with on-drive temp hashing, hash dedupe, 2 GiB cap, album targeting, async thumbnail warm, /stream mount, LAN pairing address, port 51790); race tests, full suite, mygo vet pass; marked done.
+- 2026-11-17T19:38:00Z [agent-alpha] UI-DISCOVER-STAGER: Claimed (in_progress); starting Discover & Staging screen implementation under internal/ui/screens/discover/\*\*.
