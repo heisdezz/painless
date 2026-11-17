@@ -21,12 +21,12 @@ type Screen struct {
 	actions       Actions
 	refreshWindow func()
 
-	mu           sync.RWMutex
-	activeDrive  *domain.DriveInfo
-	stats        Stats
-	recentMedia  []domain.MediaItem
-	recentAlbums []domain.AlbumSummary
-	drives       []domain.DriveInfo
+	mu             sync.RWMutex
+	activeDrive    *domain.DriveInfo
+	stats          Stats
+	recentMedia    []domain.MediaItem
+	recentAlbums   []domain.AlbumSummary
+	drives         []domain.DriveInfo
 	loading        bool
 	lastLoadedAt   time.Time
 	bitmaps        map[string]*mui.Bitmap

@@ -39,11 +39,9 @@ func (s *Screen) recentMediaSection(c *mui.Context, tk *lobetheme.Tokens) {
 
 		// 2. Loading state
 		if loading && len(media) == 0 {
-			mui.Row(c).Padding(32).Center().Children(func() {
-				feedback.Spin(c, feedback.SpinProps{
-					Size:   lobetheme.Middle,
-					Tip: "Querying catalog database...",
-				}, nil)
+			mui.Column(c).Padding(32).Center().Gap(8).Children(func() {
+				feedback.Spin(c, feedback.SpinProps{Size: lobetheme.Middle}, nil)
+				mui.Text(c, "Querying catalog database...").FontSize(12).TextColor(tk.TextTertiary)
 			})
 			return
 		}
