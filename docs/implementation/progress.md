@@ -186,18 +186,21 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-MEDIA-SERVER: Local Media Streaming HTTP Server
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GLM)
-- Updated: 2026-11-17T20:05:00Z
+- Updated: 2026-11-17T20:35:00Z
 - Depends on: LOGIC-DB-SQLITE
 - Allowed paths/scope: `internal/server/stream/**`
 - Acceptance: HTTP 206 Range requests via `http.ServeContent`, path traversal defense, and thumbnail endpoint on port 51789.
+- Notes:
+  - 2026-11-17: Implemented `internal/server/stream`: `Server` (Start/Shutdown/Addr/SetDriveRoot) with 4-layer path sandbox in `security.go` (relative-only, canonical root, EvalSymlinks, Rel containment) plus lexical `ValidateRelPath` pre-check so traversal/absolute/empty queries are rejected 403 before catalog lookup; `RepoResolver` over `storage.DB.Raw()` exact-path/ID SQL; handlers for `/stream` (ServeContent 206/HEAD/conditional, explicit Content-Type, CORS), `/thumbnail` (webp + immutable cache), `/health`. Default port 51789.
+  - 2026-11-17: Fixed Start/Shutdown race (serve goroutine captured local \*http.Server; Shutdown may nil s.http concurrently) and one test-path bug. Verified: `go test -race ./internal/server/stream/` pass (incl. <5ms avg seek latency, traversal/secret-leak checks), `go test ./...` all green, `go tool mygo vet .` clean, gofmt clean.
 
 #### LOGIC-MOBILE-SYNC: Mobile Companion REST & Upload API
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T20:35:00Z
 - Depends on: LOGIC-DB-SQLITE, LOGIC-THUMBNAIL
 - Allowed paths/scope: `internal/server/mobile/**`
 - Acceptance: Authenticated REST endpoints (constant-time token check), direct-to-disk streaming multipart upload, and LAN IP pairing.
@@ -248,12 +251,14 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-CATALOG-GRID: Media Catalog GridView with SearchBar & Segmented
 
-- Status: todo
-- Owner:
-- Updated:
+- Status: in_progress
+- Owner: agent-b
+- Updated: 2026-11-17T19:24:31Z
 - Depends on: UI-SHELL-NAV, LOGIC-THUMBNAIL, LOGIC-MEDIA-REPO
 - Allowed paths/scope: `internal/ui/screens/catalog/**`
 - Acceptance: Virtualized `ui.GridView`, `field.SearchBar` (debounced), `choice.Segmented` (type filter), `field.Select` (sort), `display.Empty`, `nav.ContextMenu`, and multi-selection (Ctrl/Shift/Cmd+A).
+- Notes:
+  - 2026-11-17T19:24:31Z: Claimed task. Building the media catalog screen; scope may expand to wire it into the shell's content area once the screen is ready.
 
 #### UI-ALBUM-GALLERY: Album Gallery & Lobe Modals
 
@@ -314,6 +319,8 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T18:56:00Z [agent-alpha] LOGIC-SCANNER: Claimed (in_progress); starting concurrent scanner, duplicate hasher, and metadata extractor under internal/scanner/\*\*.
 - 2026-11-17T19:56:00Z [zed-agent (GLM)] UI-STATE-BRIDGE: Implemented AppState, Selection, Job tracking, event Bus, Store mutators, and internal/ui/bridge.go (bus→Window.Update forwarding); reconciled with agent-b's shell consumption of the API, removed superseded prototype files; tests, race, vet, mygo vet all pass; marked done.
 - 2026-11-17T19:05:00Z [agent-alpha] LOGIC-SCANNER: Implemented parallel walker, MIME sniffing, EXIF & video metadata extraction, SHA-256 duplicate detection, worker pool batch writer, and pause/resume lifecycle; unit and race tests passed; marked done.
-- 2026-11-17T19:15:00Z [agent-alpha] LOGIC-GDRIVE-BACKUP: Claimed (in_progress); starting Google Drive service account integration and database backup routines under internal/gdrive/**.
+- 2026-11-17T19:15:00Z [agent-alpha] LOGIC-GDRIVE-BACKUP: Claimed (in_progress); starting Google Drive service account integration and database backup routines under internal/gdrive/\*\*.
 - 2026-11-17T19:14:06Z [agent-b] LOGIC-THUMBNAIL: Completed (done); thumbnail service, WebP disk/memory cache, persistent ffmpeg encoder pool and SIGSTOP/SIGCONT throttler; ~36ms uncached image op, full suite and race checks pass.
+- 2026-11-17T19:24:31Z [agent-b] UI-CATALOG-GRID: Claimed (in_progress); implementing the virtualized media catalog screen with search, filters, selection and context menu.
 - 2026-11-17T19:20:00Z [agent-alpha] LOGIC-GDRIVE-BACKUP: Implemented Google Drive API v3 service account auth, connection/folder testing, and non-blocking SQLite snapshot upload; unit and race tests passed; marked done.
+- 2026-11-17T20:35:00Z [zed-agent (GLM)] LOGIC-MEDIA-SERVER: Implemented streaming server (ServeContent 206, symlink-safe sandbox + lexical path guard, RepoResolver, /thumbnail, /health, port 51789, graceful shutdown); race tests, full suite, mygo vet pass; marked done. Claimed LOGIC-MOBILE-SYNC (dependencies LOGIC-DB-SQLITE + LOGIC-THUMBNAIL now done).
