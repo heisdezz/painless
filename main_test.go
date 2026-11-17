@@ -3,25 +3,23 @@ package main
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"painless/internal/ui/shell"
 )
 
-// The view runs without a window in tests, which click and type as a user
-// would.
-func TestView(t *testing.T) {
-	a := &app{}
-	tt := ui.NewTester(a.view, 480, 360)
-	if err := tt.Click("+"); err != nil {
-		t.Fatal(err)
+// The demo counter is gone; the entry point now only wires the shell window.
+func TestShellWindowOptions(t *testing.T) {
+	options := shell.New(nil).WindowOptions()
+	if options.Title != "painless" {
+		t.Errorf("title = %q", options.Title)
 	}
-	if a.count != 1 || !tt.HasText("1") {
-		t.Errorf("count %d after a click, texts %q", a.count, tt.Texts())
+	if options.Width != 1200 || options.Height != 800 ||
+		options.MinWidth != 800 || options.MinHeight != 600 {
+		t.Errorf("unexpected window size: %+v", options)
 	}
-	if err := tt.Click("Name"); err != nil {
-		t.Fatal(err)
+	if options.StateKey != "painless_main_window" {
+		t.Errorf("state key = %q", options.StateKey)
 	}
-	tt.Type("Ada")
-	if !tt.HasText("Hello, Ada!") {
-		t.Errorf("texts %q after typing a name", tt.Texts())
+	if options.Content == nil {
+		t.Fatal("window has no native UI content")
 	}
 }
