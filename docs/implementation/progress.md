@@ -331,6 +331,19 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
   - 2026-11-17T22:15:00Z: Claimed (follow-up promised on UI-SETTINGS-LOGS). Same owner-screen-hosts-itself pattern agent-alpha used for albums/discover. agent-b's shell edits (drive_bar/toast/window/library) are untouched; shell.go and placeholder.go were clean at claim time.
   - 2026-11-17T22:35:00Z: Done. Shell now constructs a `*logging.Logger` (exposed via `Logger()`) and a default settings screen wired with `Toast: store.Notify`; `SetSettings`/`Settings` allow controller wiring later. `placeholder.go` hosts `state.ScreenSettings` and routes the standalone `state.ScreenLogs` entry to the settings screen with `ShowLogsTab()` (new accessor on `settings.Screen`, plus `Logs()` for tests). Settings screen shows per-tab empty states until real controllers land (Backups/Mobile/GDrive are nil by default). Added `settings_wiring_test.go` (navigation + logger→console feed); shell+settings tests, -race, go vet and mygo vet all pass.
 
+### Phase 7b: Settings Integration
+
+#### SYS-SETTINGS-VALUES: Wire Real Controllers into Settings Tabs
+
+- Status: in_progress
+- Owner: agent-b
+- Updated: 2026-11-17T21:50:55Z
+- Depends on: UI-SETTINGS-LOGS, UI-SHELL-SETTINGS-WIRING, SYS-LIBRARY-WIRING
+- Allowed paths/scope: `internal/ui/shell/settings_*.go`, `internal/ui/shell/shell.go`, `internal/ui/shell/library.go`
+- Acceptance: Settings tabs show real DB path/size/backups/integrity, mobile pairing values and gdrive credentials from persisted app config; enabling mobile sync starts the LAN server; controls persist their values. Tests with temp config/drive roots.
+- Notes:
+  - 2026-11-17T21:50:55Z: Claimed. Follow-up to the layout fix on the settings screen; registry has no unclaimed tasks left.
+
 ### Phase 7: Integration
 
 #### SYS-LIBRARY-WIRING: Connect Active Drive to Library Services
@@ -343,7 +356,56 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - Acceptance: When the active drive changes, its portable SQLite DB is opened, a MediaRepo and thumbnail service are injected into the catalog, and real media items render; resources close on switch or window close. Tests use temporary drive roots.
 - Notes:
   - 2026-11-17T20:49:17Z: Claimed. No unclaimed registry tasks remain; this is the follow-up recorded on UI-CATALOG-GRID.
-  - 2026-11-17T20:58:46Z: Implemented libraryController: drive events from the window bridge open the active drive's SQLite DB, inject MediaRepo + thumbnail.Service into the catalog, and close the previous DB/thumbnails on switch, drive removal and window close. "Start Scan" now navigates to Discover; other catalog actions remain no-ops until their screens land. Tests use two temporary drive roots and verify catalog contents across switches, cleanup and scan navigation; shell tests and race checks pass.
+    - 2026-11-17T20:58:46Z: Implemented libraryController: drive events from the window bridge open the active drive's SQLite DB, inject MediaRepo + thumbnail.Service into the catalog, and close the previous DB/thumbnails on switch, drive removal and window close. "Start Scan" now navigates to Discover; other catalog actions remain no-ops until their screens land. Tests use two temporary drive roots and verify catalog contents across switches, cleanup and scan navigation; shell tests and race checks pass.
+    - 2026-11-17T23:40:00Z: Extended the controller to the Albums and Discover screens. The same active-drive lifecycle now builds albumRepository + AlbumRepo/MediaRepo/scanner/StagingEngine into both screens, reloads them on EventMediaChanged and refreshes Discover's album list on screen entry; catalogs and albums hide mutations when the DB opened read-only. Scans index against the drive root while scanning a validated subfolder, commit results into virtual staging instead of moving files, and both scan and consolidation jobs are canceled and awaited before the old DB closes. Catalog Delete now stages items and opens Discover. Tests cover the new wiring, staging reset on drive switch, close-cancels-scan, the outside-drive path guard and delete staging; `go test ./...`, `go test -race` on shell+discover, `go vet`, `go tool mygo vet .` and gofmt pass. Scope expanded beyond this task's listed paths into `internal/ui/screens/{albums,discover}`, `internal/storage/media_repo.go`, `internal/scanner/scanner.go` and `internal/fileops/staging.go`.
+
+#### SYS-SETTINGS-CONTROLLERS: Real Settings Controllers (Backups, Mobile Sync, GDrive)
+
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T21:44:56Z
+- Depends on: UI-SETTINGS-LOGS, LOGIC-DB-SQLITE, LOGIC-MOBILE-SYNC, LOGIC-GDRIVE-BACKUP, SYS-LIBRARY-WIRING (read-only: consumes state.Store)
+- Allowed paths/scope: `internal/wiring/**` (new package), `docs/implementation/progress.md`. Does NOT touch `internal/ui/shell/library.go` or other agents' files; shell gets the controller-backed screen via the existing `Shell.SetSettings` hook.
+- Acceptance: `internal/wiring` provides implementations of `settings.BackupsController`, `settings.MobileSyncController` and `settings.GDriveController` backed by real services: storage DB (ephemeral connections for backup/integrity/restore), mobile.Server (start/stop/restart, LAN URL, token), gdrive.Client (TestConnection, BackupNow). Settings persist as JSON on the active drive (`<root>/.painless/settings.json`). Unit tests with temporary drive roots; race checks and mygo vet pass.
+- Notes:
+  - 2026-11-17T21:44:56Z: Claimed. Design: controllers are goroutine-safe and resolve the active drive via `store.State.ActiveDrive()` (RWMutex-protected) instead of hooking libraryController, so agent-b's in-flight shell files stay untouched. Backups open ephemeral `storage.Open` connections per operation (WAL-safe alongside the library's live connection). Mobile server owns its own DB connection + repos while running, auto starts/stops on drive change via bus subscription. GDrive caches a client per credentials payload. Persistence is per-drive JSON; live-connection invalidation on restore is a known limitation deferred to library wiring.
+
+---
+
+### Phase 8: Main Entry, Dashboard & Discover Enhancements
+
+#### UI-DASHBOARD-HOME: Drive Selector Grid & Drive Stats Dashboard
+
+- Status: todo
+- Owner: -
+- Updated: 2026-11-17T23:05:00Z
+- Depends on: UI-SHELL-NAV, LOGIC-DRIVE-DETECT, LOGIC-MEDIA-REPO
+- Allowed paths/scope: `internal/ui/screens/dashboard/**`
+- Acceptance: Drive selector grid when no drive selected (mounted badges, capacity gauges, click to select), drive summary header card with actions (`Scan Volume`, `Refresh`, `Disconnect`), 3 stat cards (total media items, total albums, storage used % and progress bar), recently added media horizontal carousel, and recent albums carousel. Matches source app screenshots 1 & 2.
+- Notes:
+  - 2026-11-17: Specified in `docs/implementation/ui/07-dashboard-drive-home.md` after comparing source app root route (`/`) and UI screenshots.
+
+#### UI-DISCOVER-ADVANCED: Album Folder Card, Ignorelist Engine & Live Scanner Status
+
+- Status: todo
+- Owner: -
+- Updated: 2026-11-17T23:05:00Z
+- Depends on: UI-DISCOVER-STAGER, LOGIC-SCANNER, LOGIC-FILE-STAGING
+- Allowed paths/scope: `internal/ui/screens/discover/**`
+- Acceptance: Top Album Folder Card showing configurable storage path (`/run/media/.../media/albums`), `Rescan album folder` (with pause/resume/stop lifecycle and database recovery), and `Choose folder` directory picker; Folder & Path Ignorelist engine with quick preset chips (`+ temp`, `+ cache`, `+ raw`, `+ backups`, `+ archive`), custom ignore input with browse dialog, and default protected rules cloud (`albums/`, `node_modules/`, `.* (hidden)`, `lost+found`); real-time Scanner Status panel with State (IDLE/SCANNING/PAUSED), Checked Files count, Active Ignore Rules tag, and SQLite Cataloged count. Matches source app screenshot 3.
+- Notes:
+  - 2026-11-17: Specified in `docs/implementation/ui/08-discover-scanner-advanced.md` after comparing source app `/discover` route and UI screenshots.
+
+#### UI-SHELL-DASHBOARD-NAV: Main Landing Routing & Dashboard Wiring
+
+- Status: todo
+- Owner: -
+- Updated: 2026-11-17T23:05:00Z
+- Depends on: UI-DASHBOARD-HOME, UI-SHELL-NAV, SYS-LIBRARY-WIRING
+- Allowed paths/scope: `internal/ui/shell/**`, `internal/state/**`
+- Acceptance: `ScreenDashboard` registered as the default primary entry in `internal/state/screen.go` and sidebar nav; shell window opens onto Dashboard; selecting a drive opens its dashboard; libraryController feeds live aggregate stats, recent media items, and recent albums to the dashboard screen.
+- Notes:
+  - 2026-11-17: Enables proper main landing flow so app doesn't skip straight to catalog.
 
 ---
 
@@ -385,6 +447,10 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T20:51:31Z [kimi-k3] UI-MEDIA-VIEWER: Claimed (in_progress); building photo preview, metadata drawer, and ffmpeg-backed video player under internal/ui/screens/viewer/\*\*.
 - 2026-11-17T20:58:46Z [agent-b] SYS-LIBRARY-WIRING: Completed (review); active-drive DB/MediaRepo/thumbnails now feed the catalog, with lifecycle cleanup and tests; shell tests and race checks pass.
 - 2026-11-17T22:05:00Z [zed-agent (GLM)] UI-SETTINGS-LOGS: Done. Added internal/logging ring-buffer engine (level filter, query, export) and the settings screen — Backups, Mobile sync (QR pairing), Google Drive, and searchable Logs console — with controller interfaces, async mailbox pattern, and unit/race/vet checks. Shell wiring deferred until agent-b's shell edits settle.
+- 2026-11-17T23:40:00Z [zed-agent (GLM)] SYS-LIBRARY-WIRING follow-up: connected the active drive to the Albums and Discover screens (repos, scanner, staging, read-only gating, lifecycle cancellation), staged scan results and catalog deletes instead of moving files, and added tests. Full package tests, race, vet, mygo vet and gofmt pass; the in-progress viewer package still fails to build, so `go build ./...` remains red.
 - 2026-11-17T22:30:00Z [agent-alpha] UI-MEDIA-VIEWER: Completed (done); high-res photo viewer with display.Image, native video player with ffmpeg RGBA frame decoder and throttler pausing, EXIF metadata drawer with display.Accordion and action.CopyButton, keyboard shortcuts, unit tests and race checks passed; marked done.
 - 2026-11-17T22:35:00Z [zed-agent (GLM)] UI-SHELL-SETTINGS-WIRING: Done. Settings screen (and standalone Logs entry) now hosted in the shell content area; shell owns a process-wide Logger and routes toasts through store.Notify; controller wiring hook (SetSettings) ready for SYS integration.
 - 2026-11-17T22:45:00Z [agent-alpha] Full System Integration: Promoted UI-SHELL-NAV, UI-CATALOG-GRID, and SYS-LIBRARY-WIRING to done. Verified all 19 packages pass unit tests, race detection (go test -race ./...), and go vet with 0 errors across entire workspace.
+- 2026-11-17T21:50:55Z [agent-b] Layout fix in zed-agent's settings screen: added 28 DIP horizontal padding to `settings.Screen.View` so tabs and the Logs controls align with the shell heading and keep off the right edge; settings and shell tests pass.
+- 2026-11-17T21:50:55Z [agent-b] SYS-SETTINGS-VALUES: Created and claimed (in_progress); wiring real backup, mobile sync and Google Drive controllers into the settings tabs.
+- 2026-11-17T23:05:00Z [agent-alpha] Analyzed source application UI screenshots: identified missing main entry / dashboard route (/), drive selection picker, 3 stat cards, recent media/albums carousels, and missing Discover features (Album folder card, Ignorelist presets/custom tags, live Scanner Status card). Documented specs in docs/implementation/ui/07-dashboard-drive-home.md and 08-discover-scanner-advanced.md; added Phase 8 tasks in progress.md.
