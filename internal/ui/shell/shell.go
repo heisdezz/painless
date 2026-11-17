@@ -11,6 +11,7 @@ import (
 	"painless/internal/state"
 	"painless/internal/ui/screens/albums"
 	"painless/internal/ui/screens/catalog"
+	"painless/internal/ui/screens/dashboard"
 	"painless/internal/ui/screens/discover"
 	"painless/internal/ui/screens/settings"
 	uitheme "painless/internal/ui/theme"
@@ -20,13 +21,14 @@ import (
 // background results live in the state store; only presentation state, such
 // as the rail's width, belongs here.
 type Shell struct {
-	store    *state.Store
-	toaster  *Toaster
-	catalog  *catalog.Screen
-	albums   *albums.Screen
-	discover *discover.Screen
-	settings *settings.Screen
-	drives   *driveController
+	store     *state.Store
+	toaster   *Toaster
+	catalog   *catalog.Screen
+	albums    *albums.Screen
+	dashboard *dashboard.Screen
+	discover  *discover.Screen
+	settings  *settings.Screen
+	drives    *driveController
 
 	logger      *logging.Logger
 	navWidth    float32
@@ -45,6 +47,7 @@ func New(store *state.Store) *Shell {
 		toaster:     newToaster(store),
 		catalog:     catalog.New(catalog.Options{}),
 		albums:      albums.New(albums.Options{}),
+		dashboard:   dashboard.New(dashboard.Options{}),
 		discover:    discover.New(discover.Options{Store: store}),
 		logger:      logger,
 		settings:    settings.New(settings.Options{Logs: logger, Toast: store.Notify}),
@@ -82,6 +85,14 @@ func (s *Shell) attachDrives(controller *driveController) {
 	s.drives = controller
 	s.refresh = func() { controller.Refresh(context.Background()) }
 }
+
+// SetDashboard configures the dashboard screen shown on app launch.
+func (s *Shell) SetDashboard(d *dashboard.Screen) {
+	s.dashboard = d
+}
+
+// Dashboard returns the dashboard screen, for tests and further wiring.
+func (s *Shell) Dashboard() *dashboard.Screen { return s.dashboard }
 
 // SetDiscover configures the discover & staging screen.
 func (s *Shell) SetDiscover(d *discover.Screen) {

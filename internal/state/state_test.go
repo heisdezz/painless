@@ -21,8 +21,8 @@ func TestScreenValid(t *testing.T) {
 
 func TestDefaultScreen(t *testing.T) {
 	s := New()
-	if s.Screen() != ScreenCatalog {
-		t.Errorf("default screen = %q, want catalog", s.Screen())
+	if s.Screen() != ScreenDashboard {
+		t.Errorf("default screen = %q, want dashboard", s.Screen())
 	}
 	if !s.SetScreen(ScreenAlbums) {
 		t.Error("SetScreen to a new screen should report change")

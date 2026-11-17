@@ -41,6 +41,14 @@ func (st *Store) SetActiveDrive(id string) {
 	}
 }
 
+// ClearActiveDrive detaches the active drive and publishes
+// EventActiveDriveChange when one was active.
+func (st *Store) ClearActiveDrive() {
+	if st.State.ClearActiveDrive() {
+		st.Bus.Publish(Event{Kind: EventActiveDriveChange})
+	}
+}
+
 // Navigate switches screens and publishes EventScreenChanged when it
 // changed.
 func (st *Store) Navigate(scr Screen) {

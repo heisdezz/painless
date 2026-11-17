@@ -4,15 +4,16 @@ package state
 type Screen string
 
 const (
-	ScreenCatalog  Screen = "catalog"
-	ScreenAlbums   Screen = "albums"
-	ScreenDiscover Screen = "discover"
-	ScreenSettings Screen = "settings"
-	ScreenLogs     Screen = "logs"
+	ScreenDashboard Screen = "dashboard"
+	ScreenCatalog   Screen = "catalog"
+	ScreenAlbums    Screen = "albums"
+	ScreenDiscover  Screen = "discover"
+	ScreenSettings  Screen = "settings"
+	ScreenLogs      Screen = "logs"
 )
 
 // AllScreens lists the navigation targets in sidebar order.
-var AllScreens = []Screen{ScreenCatalog, ScreenAlbums, ScreenDiscover, ScreenSettings, ScreenLogs}
+var AllScreens = []Screen{ScreenDashboard, ScreenCatalog, ScreenAlbums, ScreenDiscover, ScreenSettings, ScreenLogs}
 
 // Screens returns a copy of all navigation targets in sidebar order.
 func Screens() []Screen {
@@ -24,7 +25,7 @@ func Screens() []Screen {
 // Valid reports whether s names a known screen.
 func (s Screen) Valid() bool {
 	switch s {
-	case ScreenCatalog, ScreenAlbums, ScreenDiscover, ScreenSettings, ScreenLogs:
+	case ScreenDashboard, ScreenCatalog, ScreenAlbums, ScreenDiscover, ScreenSettings, ScreenLogs:
 		return true
 	default:
 		return false

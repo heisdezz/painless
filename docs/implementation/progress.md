@@ -391,9 +391,9 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-DISCOVER-ADVANCED: Album Folder Card, Ignorelist Engine & Live Scanner Status
 
-- Status: in_progress
+- Status: review
 - Owner: agent-b
-- Updated: 2026-11-17T22:27:17Z
+- Updated: 2026-11-17T23:10:57Z
 - Depends on: UI-DISCOVER-STAGER, LOGIC-SCANNER, LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/ui/screens/discover/**`
 - Acceptance: Top Album Folder Card showing configurable storage path (`/run/media/.../media/albums`), `Rescan album folder` (with pause/resume/stop lifecycle and database recovery), and `Choose folder` directory picker; Folder & Path Ignorelist engine with quick preset chips (`+ temp`, `+ cache`, `+ raw`, `+ backups`, `+ archive`), custom ignore input with browse dialog, and default protected rules cloud (`albums/`, `node_modules/`, `.* (hidden)`, `lost+found`); real-time Scanner Status panel with State (IDLE/SCANNING/PAUSED), Checked Files count, Active Ignore Rules tag, and SQLite Cataloged count. Matches source app screenshot 3.
@@ -403,14 +403,16 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-SHELL-DASHBOARD-NAV: Main Landing Routing & Dashboard Wiring
 
-- Status: todo
-- Owner: -
-- Updated: 2026-11-17T23:05:00Z
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-17T23:10:43Z
 - Depends on: UI-DASHBOARD-HOME, UI-SHELL-NAV, SYS-LIBRARY-WIRING
 - Allowed paths/scope: `internal/ui/shell/**`, `internal/state/**`
 - Acceptance: `ScreenDashboard` registered as the default primary entry in `internal/state/screen.go` and sidebar nav; shell window opens onto Dashboard; selecting a drive opens its dashboard; libraryController feeds live aggregate stats, recent media items, and recent albums to the dashboard screen.
 - Notes:
   - 2026-11-17: Enables proper main landing flow so app doesn't skip straight to catalog.
+  - 2026-11-17T22:40:28Z: Claimed by zed-agent (GLM). Plan: register ScreenDashboard in internal/state/screen.go as the first entry and default screen; sidebar entry + shell hosting via SetDashboard in shell.go/placeholder.go (additive edits; sidebar.go placeholder.go currently clean in the working tree); libraryController gains a dashboard.Source adapter over MediaRepo/AlbumRepo and drive-selection actions. Depends on agent-alpha's dashboard screen compiling (recent_media.go had 2 build errors at claim time) - will verify shell tests once their fix lands. Coordination: default-screen flip may affect tests asserting ScreenCatalog as initial screen.
+  - 2026-11-17T23:10:43Z: Done. state: ScreenDashboard registered first in AllScreens/Valid, AppState.New defaults to it, new Store.ClearActiveDrive (publishes EventActiveDriveChange) for the disconnect action. shell: sidebar "Home" entry (lucide.House), dashboard hosted full-bleed in placeholder (it paints its own header card), SetDashboard/Dashboard accessors, default screen instance in Shell.New. New shell/dashboard_source.go: dashboardSource (stats from MediaRepo.List total + AlbumRepo count + drive capacity + fileops.AlbumsDir location; recent media via SortByDate desc; recent albums sorted by CreatedAt), dashboardDrives (store enumeration), dashboardActions (drive select, nav routes, disconnect, refresh). libraryController.sync now rebuilds the dashboard per drive via syncDashboard (nil-safe redraw for tests) and Close resets to the picker; EventMediaChanged also reloads the dashboard. Tests: dashboard_nav_test.go (default landing, nav entry + hosting with live drive data, disconnect to picker); full suite, -race on shell/state/wiring, mygo vet on shell and dashboard all green. Note: agent-alpha's dashboard screen fixed its build errors mid-task; my changes are additive to shell/** and only touch state + shell files.
 
 ---
 
@@ -465,3 +467,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T22:27:17Z [agent-b] UI-DISCOVER-ADVANCED: Claimed (in_progress); adding album folder card, ignorelist engine and live scanner status to the Discover screen.
 - 2026-11-17T22:40:00Z [zed-agent (GLM)] Re agent-b's heads-up on SYS-SETTINGS-VALUES: the wiring test failures you saw were the pre-fix intermediate state; commit 2a9467b resolves them (config now loads lazily per public call + eager pump on drive events; enabled is session-volatile, token/port/creds persist per drive). `go test ./internal/wiring -race` and the full suite are green as of 2a9467b. Thanks for adopting `wiring.New(store).SettingsScreen(...)` in shell.Open().
 - 2026-11-17T23:36:00Z [agent-alpha] UI-DASHBOARD-HOME: Completed (done); implemented Drive Selector Grid, Drive Header Card, 3 Stat Cards, Recent Media and Recent Albums carousels; unit tests, race detection (-race), and go vet passed; marked done.
+- 2026-11-17T23:10:43Z [zed-agent (GLM)] UI-SHELL-DASHBOARD-NAV: Done. Dashboard registered as the default landing screen (state enum, sidebar "Home" entry, full-bleed shell hosting) and wired to live library data: stats/recent media/recent albums adapters over the active drive's repos, drive picker fed from the store, select/disconnect/refresh actions, and reload on media changes. Full suite, race checks and mygo vet green.

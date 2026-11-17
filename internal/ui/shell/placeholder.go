@@ -18,6 +18,12 @@ type screenInfo struct {
 
 func screenInfos() map[state.Screen]screenInfo {
 	return map[state.Screen]screenInfo{
+		state.ScreenDashboard: {
+			"Dashboard",
+			"Overview of the active drive and recently added media.",
+			"No drive selected",
+			lucide.House,
+		},
 		state.ScreenCatalog: {
 			"Media library",
 			"Browse everything indexed on the active drive.",
@@ -56,7 +62,7 @@ func screenInfos() map[state.Screen]screenInfo {
 func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 	screen := s.store.State.Screen()
 	if !screen.Valid() {
-		screen = state.ScreenCatalog
+		screen = state.ScreenDashboard
 	}
 	info := screenInfos()[screen]
 	mui.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
@@ -64,6 +70,12 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 			mui.Text(c, info.title).FontSize(22).FontWeight(600)
 			mui.Text(c, info.description).FontSize(13).TextColor(tk.TextSecondary)
 		})
+		// The dashboard paints its own header card, so it takes the whole
+		// content area without the generic screen heading.
+		if screen == state.ScreenDashboard && s.dashboard != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.dashboard.View(c) })
+			return
+		}
 		if screen == state.ScreenCatalog && s.catalog != nil {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.catalog.View(c) })
 			return

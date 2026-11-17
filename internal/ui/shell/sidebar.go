@@ -23,6 +23,7 @@ type navItem struct {
 // navigationItems returns the sidebar entries in navigation order.
 func navigationItems() []navItem {
 	return []navItem{
+		{state.ScreenDashboard, "Home", lucide.House},
 		{state.ScreenCatalog, "Library", lucide.FolderHeart},
 		{state.ScreenAlbums, "Albums", lucide.Images},
 		{state.ScreenDiscover, "Discover", lucide.ScanSearch},

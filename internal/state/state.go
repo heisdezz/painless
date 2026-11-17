@@ -27,7 +27,7 @@ type AppState struct {
 // New creates an initialized AppState with the catalog screen active.
 func New() *AppState {
 	return &AppState{
-		screen:    ScreenCatalog,
+		screen:    ScreenDashboard,
 		selection: NewSelection(),
 		jobs:      map[string]*Job{},
 	}
@@ -107,6 +107,16 @@ func (s *AppState) ActiveDriveID() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.activeID
+}
+
+// ClearActiveDrive detaches the active drive. Returns true when a drive
+// was active and the selection changed.
+func (s *AppState) ClearActiveDrive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := s.activeID != ""
+	s.activeID = ""
+	return changed
 }
 
 // SetActiveDrive selects the active drive by ID. Returns true when the

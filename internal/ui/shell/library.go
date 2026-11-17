@@ -110,6 +110,7 @@ func (l *libraryController) sync() {
 	screen.ReloadAlbums()
 	l.shell.SetDiscover(screen)
 	l.shell.SetCatalog(mediaRepo, thumbs, libraryActions{store: l.store, media: mediaRepo, discover: screen})
+	l.syncDashboard(drive, mediaRepo, albumRepo, thumbs)
 	l.shell.SetAlbums(albums.New(albums.Options{
 		Albums: albumRepository{albumRepo}, Media: mediaRepo, Thumbs: thumbs,
 		DriveRoot: drive.Path, ReadOnly: db.IsReadOnly(),
@@ -123,6 +124,7 @@ func (l *libraryController) Close() {
 	l.shell.SetDiscover(discover.New(discover.Options{}))
 	l.shell.SetAlbums(albums.New(albums.Options{}))
 	l.shell.SetCatalog(nil, nil, libraryActions{store: l.store})
+	l.resetDashboard()
 	if l.thumbs != nil {
 		l.thumbs.Close()
 	}
