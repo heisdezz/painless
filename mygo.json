@@ -1,0 +1,6 @@
+{
+  "name": "painless",
+  "identifier": "com.example.painless",
+  "version": "0.1.0",
+  "out": "build"
+}
