@@ -8,7 +8,6 @@ import (
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/choice"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	lobetheme "github.com/lobehub/lobe-mygo/pkg/theme"
 
@@ -20,17 +19,17 @@ func (s *Screen) renderVideoPlayer(c *mui.Context, tk *lobetheme.Tokens, item *d
 
 	s.ensureVideoInitialized(item)
 
-	mui.Column(c).Grow(1).Basis(0).Center().Gap(12).Children(func() {
-		// Video viewport
-		if s.videoPlayer != nil {
-			mui.Video(c, s.videoPlayer)
-		} else {
-			mui.Column(c).Grow(1).Basis(0).Center().Children(func() {
-				mui.Text(c, "Video Player").FontSize(14).TextColor(tk.TextSecondary)
-			})
-		}
-
-		// Controls bar
+	// Theater stage: the frame fills the dark canvas and the slim control
+	// strip sits at its foot, without a floating card around it.
+	mui.Column(c).Grow(1).Basis(0).Children(func() {
+		mui.Box(c).Grow(1).Basis(0).Center().Children(func() {
+			if s.videoPlayer != nil {
+				mui.Video(c, s.videoPlayer)
+			} else {
+				mui.Text(c, "No video preview available").
+					FontSize(13).TextColor(tk.TextTertiary)
+			}
+		})
 		s.videoControlsBar(c, tk, item)
 	})
 }
@@ -77,8 +76,7 @@ func (s *Screen) ensureVideoInitialized(item *domain.MediaItem) {
 }
 
 func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *domain.MediaItem) {
-	mui.Row(c).Shrink(0).Padding(10, 16).Radius(10).Background(tk.BgElevated).
-		Border(1, tk.BorderSecondary).AlignItems(mui.Center).Gap(12).Children(func() {
+	mui.Row(c).Shrink(0).Padding(10, 16).AlignItems(mui.Center).Gap(12).Children(func() {
 		// Play/Pause button
 		isPlaying := false
 		if s.videoPlayer != nil {
@@ -109,20 +107,15 @@ func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *do
 			totalDur = float64(*item.DurationSeconds)
 		}
 
-		curFormatted := formatSeconds(curPos)
-		totalFormatted := formatSeconds(totalDur)
-
-		display.Tag(c, fmt.Sprintf("%s / %s", curFormatted, totalFormatted), display.TagProps{
-			Size:  lobetheme.Small,
-			Color: display.TagBlue,
-		})
+		mui.Text(c, formatSeconds(curPos)+" / "+formatSeconds(totalDur)).
+			FontSize(12).TextColor(tk.TextSecondary).Shrink(0).SingleLine()
 
 		// Scrubber slider
 		sliderPos := curPos
 		if choice.Slider(c, &sliderPos, choice.SliderProps{
 			Min: 0,
 			Max: totalDur,
-		}).Changed() {
+		}).Grow(1).Changed() {
 			if s.videoPlayer != nil {
 				s.videoPlayer.Seek(time.Duration(sliderPos * float64(time.Second)))
 			}

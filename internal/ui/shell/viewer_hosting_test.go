@@ -57,7 +57,7 @@ func TestViewerDeepLink(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if err := tt.Click("Close"); err != nil {
+	if err := tt.Click("Back to Library"); err != nil {
 		t.Fatal(err)
 	}
 	if store.State.Screen() != state.ScreenCatalog {

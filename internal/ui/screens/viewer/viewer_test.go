@@ -156,7 +156,6 @@ func TestViewer_MetadataDrawer(t *testing.T) {
 	})
 
 	screen.OpenItem(items[0], items)
-	screen.ToggleDrawer()
 
 	tt := mui.NewTester(screen.View, 1000, 700)
 	if !tt.HasText("Media Details & EXIF") {

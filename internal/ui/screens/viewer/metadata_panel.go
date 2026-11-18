@@ -3,174 +3,201 @@ package viewer
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
+	"github.com/lobehub/lobe-mygo/pkg/layout"
 	lobetheme "github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"painless/internal/domain"
 )
 
-func (s *Screen) metadataDrawer(c *mui.Context, tk *lobetheme.Tokens) {
-	if !s.drawerOpen || s.currentItem == nil {
-		return
+// infoRailWidth is the fixed width of the inspector rail next to the stage.
+const infoRailWidth = 300
+
+func (s *Screen) infoRail(c *mui.Context, tk *lobetheme.Tokens, item domain.MediaItem) {
+	meta := item.ParsedMetadata
+	if meta == nil {
+		meta, _ = item.ParseMetadata()
 	}
 
-	feedback.Drawer(c, &s.drawerOpen, feedback.DrawerProps{
-		Placement: feedback.Right,
-		Title:     "Media Details & EXIF",
-		Size:      400,
-	}, func() {
-		item := s.currentItem
-		meta := item.ParsedMetadata
-		if meta == nil {
-			meta, _ = item.ParseMetadata()
-		}
+	mui.Column(c).Width(infoRailWidth).Shrink(0).AlignSelf(mui.Stretch).
+		Background(tk.BgLayout).Border(1, tk.BorderSecondary).Children(func() {
+		mui.Scroll(c).Fill().Children(func() {
+			mui.Column(c).Fill().Padding(16, 16, 24).Children(func() {
+				mui.Text(c, "Media Details & EXIF").
+					FontSize(11).FontWeight(600).TextColor(tk.TextTertiary).LetterSpacing(0.5)
+				mui.Row(c).Padding(6, 0, 14).AlignItems(mui.Center).Gap(8).Children(func() {
+					display.Tag(c, formatTag(item), display.TagProps{
+						Size:  lobetheme.Small,
+						Color: display.TagBlue,
+					})
+					mui.Text(c, formatBytes(uint64(item.FileSize))).
+						FontSize(12).TextColor(tk.TextSecondary).SingleLine()
+				})
 
-		items := []display.AccordionItem{
-			{Key: "file", Title: "File Attributes"},
-			{Key: "dimensions", Title: "Dimensions & Format"},
-			{Key: "camera", Title: "EXIF Camera Details"},
-			{Key: "gps", Title: "GPS Location"},
-		}
+				railSection(c, tk, "File Attributes", func() {
+					kvRow(c, tk, "Filename", filepath.Base(item.CurrentRelativePath))
+					kvRow(c, tk, "File Size", formatBytes(uint64(item.FileSize)))
+					kvRow(c, tk, "MIME Type", item.MimeType)
+					if !item.CreatedAt.IsZero() {
+						kvRow(c, tk, "Discovered", item.CreatedAt.Format("2006-01-02 15:04"))
+					}
+					if item.AlbumID != nil {
+						kvRow(c, tk, "Album", fmt.Sprintf("#%d", *item.AlbumID))
+					}
+					if item.OriginalRelativePath != "" && item.OriginalRelativePath != item.CurrentRelativePath {
+						kvBlock(c, tk, "Original Location", item.OriginalRelativePath, false)
+					}
+					kvBlock(c, tk, "Active Catalog Path", item.CurrentRelativePath, false)
+					kvBlock(c, tk, "SHA-256", item.FileHash, true)
+				})
 
-		mui.Scroll(c).Fill().Padding(12, 16).Children(func() {
-			display.Accordion(c, s.accordionOpen, display.AccordionProps{
-				Items:   items,
-				Variant: display.AccordionOutlined,
-			}, func(key string) {
-				switch key {
-				case "file":
-					s.renderFileAttributes(c, tk, item)
-				case "dimensions":
-					s.renderDimensions(c, tk, item, meta)
-				case "camera":
+				layout.Divider(c, layout.DividerProps{})
+
+				railSection(c, tk, "Dimensions & Format", func() {
+					if meta != nil && meta.Width > 0 && meta.Height > 0 {
+						gcd := calculateGCD(meta.Width, meta.Height)
+						kvRow(c, tk, "Resolution", fmt.Sprintf("%d × %d", meta.Width, meta.Height))
+						kvRow(c, tk, "Aspect Ratio", fmt.Sprintf("%d:%d", meta.Width/gcd, meta.Height/gcd))
+					} else {
+						kvRow(c, tk, "Resolution", "Unknown")
+					}
+					if item.DurationSeconds != nil && *item.DurationSeconds > 0 {
+						kvRow(c, tk, "Duration", formatSeconds(float64(*item.DurationSeconds)))
+					}
+					if meta != nil && meta.VideoCodec != "" {
+						kvRow(c, tk, "Video Codec", meta.VideoCodec)
+					}
+					if meta != nil && meta.AudioCodec != "" {
+						kvRow(c, tk, "Audio Codec", meta.AudioCodec)
+					}
+					if meta != nil && meta.Bitrate > 0 {
+						kvRow(c, tk, "Bitrate", fmt.Sprintf("%d kbps", meta.Bitrate/1000))
+					}
+				})
+
+				layout.Divider(c, layout.DividerProps{})
+
+				railSection(c, tk, "EXIF Camera Details", func() {
 					s.renderCameraDetails(c, tk, meta)
-				case "gps":
+				})
+
+				layout.Divider(c, layout.DividerProps{})
+
+				railSection(c, tk, "GPS Location", func() {
 					s.renderGPS(c, tk, meta)
-				}
+				})
 			})
 		})
 	})
 }
 
-func (s *Screen) renderFileAttributes(c *mui.Context, tk *lobetheme.Tokens, item *domain.MediaItem) {
-	mui.Column(c).Padding(8, 0).Gap(8).Children(func() {
-		fileName := filepath.Base(item.CurrentRelativePath)
-		s.keyValueRow(c, tk, "Filename", fileName, false)
-		s.keyValueRow(c, tk, "Relative Path", item.CurrentRelativePath, false)
-		s.keyValueRow(c, tk, "File Size", formatBytes(uint64(item.FileSize)), false)
-		s.keyValueRow(c, tk, "MIME Type", item.MimeType, false)
-		s.keyValueRow(c, tk, "SHA-256", item.FileHash, true)
+// railSection renders one inspector group: a micro heading over a tight
+// column of rows, separated from its neighbors by hairline dividers.
+func railSection(c *mui.Context, tk *lobetheme.Tokens, title string, body func()) {
+	mui.Column(c).Gap(8).Padding(0, 0, 14).Children(func() {
+		mui.Text(c, title).FontSize(11).FontWeight(600).TextColor(tk.TextTertiary)
+		body()
 	})
 }
 
-func (s *Screen) renderDimensions(c *mui.Context, tk *lobetheme.Tokens, item *domain.MediaItem, meta *domain.MediaMetadata) {
-	mui.Column(c).Padding(8, 0).Gap(8).Children(func() {
-		if meta != nil && meta.Width > 0 && meta.Height > 0 {
-			resStr := fmt.Sprintf("%d × %d", meta.Width, meta.Height)
-			s.keyValueRow(c, tk, "Resolution", resStr, false)
-
-			gcd := calculateGCD(meta.Width, meta.Height)
-			aspectStr := fmt.Sprintf("%d:%d", meta.Width/gcd, meta.Height/gcd)
-			s.keyValueRow(c, tk, "Aspect Ratio", aspectStr, false)
-		} else {
-			s.keyValueRow(c, tk, "Resolution", "Unknown", false)
-		}
-
-		if item.DurationSeconds != nil && *item.DurationSeconds > 0 {
-			mins := *item.DurationSeconds / 60
-			secs := *item.DurationSeconds % 60
-			s.keyValueRow(c, tk, "Duration", fmt.Sprintf("%d:%02d", mins, secs), false)
-		}
-
-		if meta != nil && meta.VideoCodec != "" {
-			s.keyValueRow(c, tk, "Video Codec", meta.VideoCodec, false)
-		}
-		if meta != nil && meta.AudioCodec != "" {
-			s.keyValueRow(c, tk, "Audio Codec", meta.AudioCodec, false)
-		}
-		if meta != nil && meta.Bitrate > 0 {
-			bitrateKbps := meta.Bitrate / 1000
-			s.keyValueRow(c, tk, "Bitrate", fmt.Sprintf("%d kbps", bitrateKbps), false)
-		}
+// kvRow is a compact inspector row: label left, value right-aligned.
+func kvRow(c *mui.Context, tk *lobetheme.Tokens, key, val string) {
+	if val == "" {
+		val = "—"
+	}
+	mui.Row(c).AlignItems(mui.Center).Gap(12).Children(func() {
+		mui.Text(c, key).FontSize(12).TextColor(tk.TextSecondary).Shrink(0)
+		mui.Text(c, val).FontSize(12).TextColor(tk.Text).Grow(1).
+			SingleLine().TextAlign(mui.End)
 	})
+}
+
+// kvBlock stacks a long value under its label so paths and hashes wrap
+// instead of truncating.
+func kvBlock(c *mui.Context, tk *lobetheme.Tokens, key, val string, allowCopy bool) {
+	if val == "" {
+		return
+	}
+	mui.Column(c).Gap(2).Children(func() {
+		mui.Text(c, key).FontSize(12).TextColor(tk.TextSecondary).SingleLine()
+		mui.Row(c).AlignItems(mui.Center).Gap(6).Children(func() {
+			mui.Text(c, val).FontSize(12).TextColor(tk.Text).Grow(1)
+			if allowCopy {
+				action.CopyButton(c, val, action.CopyButtonProps{Size: lobetheme.Small})
+			}
+		})
+	})
+}
+
+// formatTag renders the container format (MP4, JPEG...) from the MIME type.
+func formatTag(item domain.MediaItem) string {
+	subtype := item.MimeType
+	if slash := strings.Index(subtype, "/"); slash >= 0 {
+		subtype = subtype[slash+1:]
+	}
+	if subtype == "" {
+		return "File"
+	}
+	return strings.ToUpper(subtype)
 }
 
 func (s *Screen) renderCameraDetails(c *mui.Context, tk *lobetheme.Tokens, meta *domain.MediaMetadata) {
-	mui.Column(c).Padding(8, 0).Gap(8).Children(func() {
-		if meta == nil || (meta.CameraMake == "" && meta.CameraModel == "") {
-			mui.Text(c, "No EXIF camera metadata recorded.").
-				FontSize(12).TextColor(tk.TextTertiary).Padding(4, 0)
-			return
-		}
+	if meta == nil || (meta.CameraMake == "" && meta.CameraModel == "") {
+		mui.Text(c, "No EXIF camera metadata recorded.").
+			FontSize(12).TextColor(tk.TextTertiary)
+		return
+	}
 
-		if meta.CameraMake != "" {
-			s.keyValueRow(c, tk, "Make", meta.CameraMake, false)
-		}
-		if meta.CameraModel != "" {
-			s.keyValueRow(c, tk, "Model", meta.CameraModel, false)
-		}
-		if meta.LensModel != "" {
-			s.keyValueRow(c, tk, "Lens", meta.LensModel, false)
-		}
-		if meta.Aperture > 0 {
-			s.keyValueRow(c, tk, "Aperture", fmt.Sprintf("f/%.1f", meta.Aperture), false)
-		}
-		if meta.ExposureTime != "" {
-			s.keyValueRow(c, tk, "Exposure", meta.ExposureTime, false)
-		}
-		if meta.ISO > 0 {
-			s.keyValueRow(c, tk, "ISO", fmt.Sprintf("%d", meta.ISO), false)
-		}
-		if meta.FocalLength > 0 {
-			s.keyValueRow(c, tk, "Focal Length", fmt.Sprintf("%.1f mm", meta.FocalLength), false)
-		}
-		if meta.DateTaken != nil {
-			s.keyValueRow(c, tk, "Date Taken", meta.DateTaken.Format("2006-01-02 15:04:05"), false)
-		}
-	})
+	if meta.CameraMake != "" {
+		kvRow(c, tk, "Make", meta.CameraMake)
+	}
+	if meta.CameraModel != "" {
+		kvRow(c, tk, "Model", meta.CameraModel)
+	}
+	if meta.LensModel != "" {
+		kvRow(c, tk, "Lens", meta.LensModel)
+	}
+	if meta.Aperture > 0 {
+		kvRow(c, tk, "Aperture", fmt.Sprintf("f/%.1f", meta.Aperture))
+	}
+	if meta.ExposureTime != "" {
+		kvRow(c, tk, "Exposure", meta.ExposureTime)
+	}
+	if meta.ISO > 0 {
+		kvRow(c, tk, "ISO", fmt.Sprintf("%d", meta.ISO))
+	}
+	if meta.FocalLength > 0 {
+		kvRow(c, tk, "Focal Length", fmt.Sprintf("%.1f mm", meta.FocalLength))
+	}
+	if meta.DateTaken != nil {
+		kvRow(c, tk, "Date Taken", meta.DateTaken.Format("2006-01-02 15:04:05"))
+	}
 }
 
 func (s *Screen) renderGPS(c *mui.Context, tk *lobetheme.Tokens, meta *domain.MediaMetadata) {
-	mui.Column(c).Padding(8, 0).Gap(8).Children(func() {
-		if meta == nil || meta.GPSLatitude == nil || meta.GPSLongitude == nil {
-			mui.Text(c, "No GPS location coordinates available.").
-				FontSize(12).TextColor(tk.TextTertiary).Padding(4, 0)
-			return
-		}
+	if meta == nil || meta.GPSLatitude == nil || meta.GPSLongitude == nil {
+		mui.Text(c, "No GPS location coordinates available.").
+			FontSize(12).TextColor(tk.TextTertiary)
+		return
+	}
 
-		latStr := fmt.Sprintf("%.6f", *meta.GPSLatitude)
-		lonStr := fmt.Sprintf("%.6f", *meta.GPSLongitude)
-		coordsStr := fmt.Sprintf("%s, %s", latStr, lonStr)
+	latStr := fmt.Sprintf("%.6f", *meta.GPSLatitude)
+	lonStr := fmt.Sprintf("%.6f", *meta.GPSLongitude)
 
-		s.keyValueRow(c, tk, "Latitude", latStr, false)
-		s.keyValueRow(c, tk, "Longitude", lonStr, false)
-		if meta.GPSAltitude != nil {
-			s.keyValueRow(c, tk, "Altitude", fmt.Sprintf("%.1f m", *meta.GPSAltitude), false)
-		}
+	kvRow(c, tk, "Latitude", latStr)
+	kvRow(c, tk, "Longitude", lonStr)
+	if meta.GPSAltitude != nil {
+		kvRow(c, tk, "Altitude", fmt.Sprintf("%.1f m", *meta.GPSAltitude))
+	}
 
-		mui.Row(c).Padding(4, 0).AlignItems(mui.Center).Gap(8).Children(func() {
-			mui.Text(c, "Coordinates:").FontSize(12).TextColor(tk.TextSecondary)
-			mui.Text(c, coordsStr).FontSize(12).FontWeight(600).Grow(1)
-			action.CopyButton(c, coordsStr, action.CopyButtonProps{
-				Size: lobetheme.Small,
-			})
-		})
-	})
-}
-
-func (s *Screen) keyValueRow(c *mui.Context, tk *lobetheme.Tokens, key, val string, allowCopy bool) {
-	mui.Row(c).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, key).Width(100).FontSize(12).TextColor(tk.TextSecondary)
-		mui.Text(c, val).FontSize(12).FontWeight(500).TextColor(tk.Text).Grow(1).SingleLine()
-		if allowCopy && val != "" {
-			action.CopyButton(c, val, action.CopyButtonProps{
-				Size: lobetheme.Small,
-			})
-		}
+	coordsStr := latStr + ", " + lonStr
+	mui.Row(c).Padding(2, 0, 0).AlignItems(mui.Center).Gap(8).Children(func() {
+		mui.Text(c, coordsStr).FontSize(12).FontWeight(500).TextColor(tk.Text).Grow(1).SingleLine()
+		action.CopyButton(c, coordsStr, action.CopyButtonProps{Size: lobetheme.Small})
 	})
 }
 

@@ -65,9 +65,8 @@ type Screen struct {
 	loading      bool
 	loadErr      string
 
-	// Metadata Drawer state
-	drawerOpen    bool
-	accordionOpen map[string]bool
+	// Info rail state
+	drawerOpen bool
 
 	// Image state
 	currentImageSrc mui.ImageSource
@@ -97,12 +96,7 @@ func New(opts Options) *Screen {
 		source:        opts.Source,
 		refreshWindow: opts.RefreshWindow,
 		onClose:       opts.OnClose,
-		accordionOpen: map[string]bool{
-			"file":       true,
-			"dimensions": true,
-			"camera":     true,
-			"gps":        true,
-		},
+		drawerOpen:    true,
 	}
 }
 
@@ -276,82 +270,75 @@ func (s *Screen) View(c *mui.Context) {
 		s.Close()
 	})
 
-	mui.Column(c).Fill().Background(tk.BgLayout).Children(func() {
-		// Top toolbar
+	// Theater layout: slim chrome over a dark stage, inspector rail right.
+	mui.Column(c).Fill().Background(tk.BgBase).Children(func() {
+		// Top bar
 		s.renderTopBar(c, tk, item)
 
-		// Main preview workspace
-		mui.Box(c).Grow(1).Children(func() {
-			if item.Type() == domain.MediaTypeVideo {
-				s.renderVideoPlayer(c, tk, &item)
-			} else {
-				s.renderImageViewer(c, tk, &item)
+		// Stage + inspector rail
+		mui.Row(c).Grow(1).Basis(0).AlignItems(mui.Stretch).Children(func() {
+			mui.Box(c).Grow(1).Basis(0).Children(func() {
+				if item.Type() == domain.MediaTypeVideo {
+					s.renderVideoPlayer(c, tk, &item)
+				} else {
+					s.renderImageViewer(c, tk, &item)
+				}
+			})
+			if s.drawerOpen {
+				s.infoRail(c, tk, item)
 			}
 		})
 	})
-
-	// EXIF Drawer
-	s.metadataDrawer(c, tk)
 }
 
 func (s *Screen) renderTopBar(c *mui.Context, tk *lobetheme.Tokens, item domain.MediaItem) {
-	mui.Row(c).Height(48).Padding(0, 16).AlignItems(mui.Center).
-		Background(tk.BgContainer).Border(1, tk.BorderSecondary).Children(func() {
-		// Close / Back button
-		action.Button(c, "Close", action.ButtonProps{
-			Variant: action.Text,
-			Size:    lobetheme.Small,
+	mui.Row(c).Shrink(0).Height(52).Padding(0, 12).AlignItems(mui.Center).Gap(8).Children(func() {
+		// Back to the library
+		action.ActionIcon(c, lucide.ArrowLeft(), action.ActionIconProps{
+			Size:  lobetheme.Middle,
+			Title: "Back to Library",
 		}).OnClick(func() {
 			s.Close()
 		})
 
-		// Title & Sequence info
-		mui.Row(c).Padding(0, 12).AlignItems(mui.Center).Gap(8).Grow(1).Children(func() {
-			fileName := filepath.Base(item.CurrentRelativePath)
-			mui.Text(c, fileName).FontSize(14).FontWeight(600).TextColor(tk.Text).SingleLine()
+		fileName := filepath.Base(item.CurrentRelativePath)
+		mui.Text(c, fileName).FontSize(13).FontWeight(600).TextColor(tk.Text).
+			Shrink(0).MinWidth(0).SingleLine()
 
-			s.mu.RLock()
-			total := len(s.items)
-			currIdx := s.currentIndex + 1
-			s.mu.RUnlock()
+		s.mu.RLock()
+		total := len(s.items)
+		currIdx := s.currentIndex + 1
+		s.mu.RUnlock()
+		if total > 0 {
+			mui.Text(c, fmt.Sprintf("%d of %d", currIdx, total)).
+				FontSize(12).TextColor(tk.TextTertiary).Shrink(0).SingleLine()
+		}
 
-			if total > 0 {
-				display.Tag(c, fmt.Sprintf("%d of %d", currIdx, total), display.TagProps{
-					Size:    lobetheme.Small,
-					Variant: display.TagFilled,
-				})
-			}
+		mui.Box(c).Grow(1)
+
+		action.ActionIcon(c, lucide.ChevronLeft(), action.ActionIconProps{
+			Size:  lobetheme.Middle,
+			Title: "Previous Item",
+		}).OnClick(func() {
+			s.PrevItem()
 		})
-
-		// Navigation & Drawer actions
-		mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
-			action.ActionIcon(c, lucide.ChevronLeft(), action.ActionIconProps{
-				Size:  lobetheme.Middle,
-				Title: "Previous Item",
-			}).OnClick(func() {
-				s.PrevItem()
-			})
-
-			action.ActionIcon(c, lucide.ChevronRight(), action.ActionIconProps{
-				Size:  lobetheme.Middle,
-				Title: "Next Item",
-			}).OnClick(func() {
-				s.NextItem()
-			})
-
-			action.ActionIcon(c, lucide.Info(), action.ActionIconProps{
-				Size:  lobetheme.Middle,
-				Title: "Toggle EXIF & Metadata",
-			}).OnClick(func() {
-				s.ToggleDrawer()
-			})
-
-			action.ActionIcon(c, lucide.X(), action.ActionIconProps{
-				Size:  lobetheme.Middle,
-				Title: "Close Viewer",
-			}).OnClick(func() {
-				s.Close()
-			})
+		action.ActionIcon(c, lucide.ChevronRight(), action.ActionIconProps{
+			Size:  lobetheme.Middle,
+			Title: "Next Item",
+		}).OnClick(func() {
+			s.NextItem()
+		})
+		action.ActionIcon(c, lucide.Info(), action.ActionIconProps{
+			Size:  lobetheme.Middle,
+			Title: "Toggle Media Details",
+		}).OnClick(func() {
+			s.ToggleDrawer()
+		})
+		action.ActionIcon(c, lucide.X(), action.ActionIconProps{
+			Size:  lobetheme.Middle,
+			Title: "Close Viewer",
+		}).OnClick(func() {
+			s.Close()
 		})
 	})
 }
