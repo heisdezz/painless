@@ -145,16 +145,44 @@ func Render(c *mui.Context, p Props) {
 // down and fully faded, asks for another frame, and the next build animates it
 // to rest after its slot delay — the canonical two-frame enter from AnimatePose.
 func applyReveal(c *mui.Context, card mui.Element, p Props) {
-	if p.Reveal == nil || !p.Reveal.Active() {
+	ApplyReveal(c, card, p.Reveal, p.RevealIndex)
+}
+
+// ApplyReveal plays a staggered entrance on any element: the first build shows
+// it at the hidden pose and asks for another frame, the next animates it to
+// rest after its slot delay. Cards in a batch share one Reveal and pass their
+// index; a nil reveal renders without motion. Used by the media tile itself
+// and by the album gallery's own card chrome.
+func ApplyReveal(c *mui.Context, e mui.Element, r *Reveal, index int) {
+	if r == nil || !r.Active() {
 		return
 	}
-	st := mui.Local(card, "painless.reveal", func() revealState { return revealState{} })
+	st := mui.Local(e, "painless.reveal", func() revealState { return revealState{} })
 	pose := mui.Pose{}
 	if !st.entered {
 		st.entered = true
-		st.delay = p.Reveal.Delay(p.RevealIndex)
+		st.delay = r.Delay(index)
 		pose = mui.Pose{Y: 8, Fade: 1}
 		c.Invalidate()
 	}
-	card.AnimatePose(pose, mui.Animation{Duration: p.Reveal.Duration, Delay: st.delay})
+	e.AnimatePose(pose, mui.Animation{Duration: r.Duration, Delay: st.delay})
+}
+
+// SkeletonTile renders one card-shaped placeholder with the shared tile's
+// chrome and metrics: a sweeping preview block plus name and meta rows. Grids
+// show these while their pages load, so the skeleton matches the real card
+// exactly and the grid does not shift when content arrives.
+func SkeletonTile(c *mui.Context) {
+	tk := lobetheme.TokensOf(c)
+	mui.Column(c).Gap(8).Padding(10).Radius(tk.BorderRadius).
+		Width(CardWidth).AlignSelf(mui.Stretch).
+		Border(1, tk.BorderSecondary).
+		Children(func() {
+			display.Skeleton(c, display.SkeletonProps{
+				Width: PreviewWidth, Height: PreviewHeight,
+				Animation: display.SkeletonSweep,
+			})
+			display.Skeleton(c, display.SkeletonProps{Width: 96, Height: 12})
+			display.Skeleton(c, display.SkeletonProps{Width: 60, Height: 11})
+		})
 }

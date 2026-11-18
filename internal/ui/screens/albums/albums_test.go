@@ -169,20 +169,65 @@ func (m *mockAlbumRepo) Merge(ctx context.Context, sourceID, targetID int64) err
 }
 
 type mockMediaRepo struct {
+	mu    sync.Mutex
 	items []domain.MediaItem
+	last  domain.MediaListParams
 }
 
 func (m *mockMediaRepo) List(ctx context.Context, params domain.MediaListParams) (*domain.MediaListPage, error) {
+	m.mu.Lock()
+	m.last = params
+	m.mu.Unlock()
 	var filtered []domain.MediaItem
 	for _, it := range m.items {
 		if params.AlbumID != nil && it.AlbumID != nil && *it.AlbumID == *params.AlbumID {
 			filtered = append(filtered, it)
 		}
 	}
+	total := len(filtered)
+	if params.Offset > len(filtered) {
+		filtered = nil
+	} else {
+		filtered = filtered[params.Offset:]
+	}
+	if params.Limit > 0 && params.Limit < len(filtered) {
+		filtered = filtered[:params.Limit]
+	}
 	return &domain.MediaListPage{
-		Items: filtered,
-		Total: len(filtered),
+		Items:  filtered,
+		Total:  total,
+		Limit:  params.Limit,
+		Offset: params.Offset,
 	}, nil
+}
+
+// waitUntil pumps frames until cond holds. Album summaries and member pages
+// load off-thread now, so assertions must wait for the worker's result to
+// drain into the view.
+func waitUntil(t *testing.T, tt *mui.Tester, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tt.Frame()
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition never met")
+}
+
+// waitSummaries waits for the async album summaries fetch to land.
+func waitSummaries(t *testing.T, tt *mui.Tester, s *Screen) {
+	t.Helper()
+	waitUntil(t, tt, func() bool { return !s.albumsLoading })
+}
+
+// waitMembers waits for the async member fetch of the open album to land and
+// render its cards.
+func waitMembers(t *testing.T, tt *mui.Tester, s *Screen, name string) {
+	t.Helper()
+	waitUntil(t, tt, func() bool { return !s.detailLoading && tt.HasText(name) })
 }
 
 func TestAlbumMemberCardOpensViewer(t *testing.T) {
@@ -201,6 +246,7 @@ func TestAlbumMemberCardOpensViewer(t *testing.T) {
 	screen.OpenAlbum(repo.summaries[0])
 
 	tt := mui.NewTester(screen.View, 1000, 700)
+	waitMembers(t, tt, screen, "beach.jpg")
 	if err := tt.Click("beach.jpg"); err != nil {
 		t.Fatal(err)
 	}
@@ -220,6 +266,7 @@ func TestAlbumMemberCardNilCallback(t *testing.T) {
 	screen.OpenAlbum(repo.summaries[0])
 
 	tt := mui.NewTester(screen.View, 1000, 700)
+	waitMembers(t, tt, screen, "beach.jpg")
 	if err := tt.Click("beach.jpg"); err != nil {
 		t.Fatal(err)
 	}
@@ -278,6 +325,7 @@ func TestAlbumScreen_EmptyState(t *testing.T) {
 	})
 
 	tt := mui.NewTester(screen.View, 1000, 700)
+	waitSummaries(t, tt, screen)
 	if !tt.HasText("No albums yet") {
 		t.Fatalf("expected empty state, got texts: %q", tt.Texts())
 	}
@@ -297,6 +345,7 @@ func TestAlbumScreen_GalleryView(t *testing.T) {
 	})
 
 	tt := mui.NewTester(screen.View, 1000, 700)
+	waitSummaries(t, tt, screen)
 	if !tt.HasText("Summer 2026") || !tt.HasText("Winter 2025") {
 		t.Fatalf("expected album cards rendered, got: %q", tt.Texts())
 	}
@@ -308,6 +357,9 @@ func TestAlbumScreen_GalleryView(t *testing.T) {
 func TestAlbumScreen_Filter(t *testing.T) {
 	repo := newMockAlbumRepo()
 	screen := New(Options{Albums: repo})
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	waitSummaries(t, tt, screen)
 
 	screen.SetSearchQuery("Summer")
 	filtered := screen.getFilteredSummaries()
@@ -350,6 +402,7 @@ func TestAlbumScreen_DetailNavigation(t *testing.T) {
 	}
 
 	tt := mui.NewTester(screen.View, 1000, 700)
+	waitMembers(t, tt, screen, "beach.jpg")
 	if !tt.HasText("Back to Albums") {
 		t.Fatalf("expected back button, got: %q", tt.Texts())
 	}
@@ -364,9 +417,8 @@ func TestAlbumScreen_DetailNavigation(t *testing.T) {
 	}
 
 	tt = mui.NewTester(screen.View, 1000, 700)
-	if !tt.HasText("Summer 2026") || !tt.HasText("Winter 2025") {
-		t.Fatalf("expected gallery view to be restored")
-	}
+	waitSummaries(t, tt, screen)
+	waitUntil(t, tt, func() bool { return tt.HasText("Summer 2026") && tt.HasText("Winter 2025") })
 }
 
 func TestAlbumScreen_CreateModal(t *testing.T) {
