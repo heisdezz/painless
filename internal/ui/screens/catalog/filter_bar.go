@@ -27,7 +27,7 @@ func (s *Screen) filterBar(c *mui.Context) {
 			ShortKey:    "mod+f",
 			Variant:     field.InputFilled,
 			Size:        lobetheme.Small,
-		}).Width(280)
+		}).Grow(1).Basis(220).MinWidth(140).MaxWidth(360)
 		action.Segmented(c, &s.filter, filterOptions, action.SegmentedProps{Size: lobetheme.Small})
 
 		mui.Box(c).Grow(1)
@@ -38,7 +38,7 @@ func (s *Screen) filterBar(c *mui.Context) {
 		display.Tag(c, fmt.Sprintf("%d items", total), display.TagProps{
 			Size:  lobetheme.Small,
 			Color: display.TagBlue,
-		}).TextColor(tk.TextSecondary)
+		}).TextColor(tk.TextSecondary).Shrink(0)
 
 		selected := "date_desc"
 		if s.sort >= 0 && s.sort < len(sortOptions) {
@@ -49,7 +49,7 @@ func (s *Screen) filterBar(c *mui.Context) {
 			Placeholder: "Sort by",
 			Variant:     field.InputFilled,
 			Size:        lobetheme.Small,
-		})
+		}).Shrink(0)
 		for index, option := range sortOptions {
 			if option.Value == selected {
 				s.sort = index

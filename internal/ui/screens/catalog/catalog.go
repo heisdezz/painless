@@ -82,6 +82,7 @@ type Screen struct {
 
 	grid      mui.GridState
 	selected  int
+	pivot     int
 	selection mui.Selection[int64]
 
 	mu       sync.Mutex
@@ -108,6 +109,7 @@ func New(opts Options) *Screen {
 		thumbs:   opts.Thumbs,
 		actions:  opts.Actions,
 		selected: -1,
+		pivot:    -1,
 		pending:  make(map[string]bool),
 		fetched:  make(map[string][]byte),
 		limits:   make(chan struct{}, 4),

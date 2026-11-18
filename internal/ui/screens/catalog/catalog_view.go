@@ -34,7 +34,13 @@ func (s *Screen) gridView(c *mui.Context) {
 		})
 		return
 	}
-	mui.GridView(c, &s.grid, len(items), 160, 160, func(i int) {
-		s.mediaCard(c, items[i])
+	// Cell size fits the card content (padding, 148x110 preview, name and
+	// meta row) without clipping; 168 also keeps six columns at ~1100 width.
+	grid := mui.GridView(c, &s.grid, len(items), 168, 188, func(i int) {
+		s.mediaCard(c, i, items[i])
 	}).Grow(1)
+	// Double-click or Enter on a focused cell also opens the viewer.
+	if grid.Submitted() && s.selected >= 0 && s.selected < len(items) {
+		s.actions.OpenInViewer(items[s.selected])
+	}
 }

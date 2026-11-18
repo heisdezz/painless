@@ -12,10 +12,10 @@ import (
 	"painless/internal/domain"
 )
 
-func (s *Screen) mediaCard(c *mui.Context, item domain.MediaItem) {
+func (s *Screen) mediaCard(c *mui.Context, i int, item domain.MediaItem) {
 	tk := lobetheme.TokensOf(c)
 	selected := s.selection.Has(item.ID)
-	card := mui.Column(c).Gap(4).Padding(6).Radius(tk.BorderRadius).AlignSelf(mui.Stretch).
+	card := mui.Column(c).Gap(8).Padding(10).Radius(tk.BorderRadius).AlignSelf(mui.Stretch).
 		Label("card " + baseName(item.CurrentRelativePath))
 	if selected {
 		card.Background(tk.FillSecondary).Border(1, tk.Primary)
@@ -38,9 +38,60 @@ func (s *Screen) mediaCard(c *mui.Context, item domain.MediaItem) {
 			}
 		})
 	})
+	// The card consumes pointer clicks before the grid cell handler, so it
+	// mirrors the grid's click semantics itself: plain click chooses the item
+	// and opens the viewer, Cmd-click toggles it in the multi-select and
+	// Shift-click extends the choice from the pivot.
+	card.OnClick(func() {
+		if s.cardChosen(i, card.ClickModifiers()) {
+			s.actions.OpenInViewer(item)
+		}
+	})
 	if key := overlay.ContextMenu(c, card, overlay.DropdownMenuProps{Items: contextItems()}); key != "" {
 		s.handleContext(key, item)
 	}
+}
+
+// cardChosen updates the grid selection like GridState.click does and
+// reports whether this is a plain click that should open the viewer.
+func (s *Screen) cardChosen(i int, mods mui.Modifiers) bool {
+	switch {
+	case mods&mui.Shift != 0:
+		if s.pivot < 0 || s.pivot >= len(s.page.Items) {
+			s.chooseCard(i)
+			break
+		}
+		s.selection.Clear()
+		for j := min(s.pivot, i); j <= max(s.pivot, i); j++ {
+			s.selection.Add(s.itemKey(j))
+		}
+		s.selected = i
+	case mods&mui.Cmd != 0:
+		key := s.itemKey(i)
+		if s.selection.Has(key) {
+			s.selection.Remove(key)
+		} else {
+			s.selection.Add(key)
+		}
+		s.selected, s.pivot = i, i
+	default:
+		s.chooseCard(i)
+		return true
+	}
+	return false
+}
+
+func (s *Screen) chooseCard(i int) {
+	s.selection.Clear()
+	s.selection.Add(s.itemKey(i))
+	s.selected, s.pivot = i, i
+}
+
+func (s *Screen) itemKey(i int) int64 {
+	if key, ok := s.grid.Key(i).(int64); ok {
+		return key
+	}
+	return 0
 }
 
 func baseName(path string) string {

@@ -187,6 +187,62 @@ func TestCatalogSelectionAndBatchAction(t *testing.T) {
 	}
 }
 
+func TestCatalogClickOpensViewer(t *testing.T) {
+	screen, _, _, actions := newTestScreen()
+	tt := mui.NewTester(screen.View, 1000, 700)
+	if err := tt.Click("cat.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if actions.opened.ID != 1 {
+		t.Fatalf("expected cat.jpg opened in viewer, got %+v", actions.opened)
+	}
+}
+
+func TestCatalogCmdClickSelectsWithoutOpening(t *testing.T) {
+	screen, _, _, actions := newTestScreen()
+	tt := mui.NewTester(screen.View, 1000, 700)
+	if err := tt.ClickWith(mui.Cmd, "cat.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if actions.opened.ID != 0 {
+		t.Fatalf("Cmd-click should not open the viewer, got %+v", actions.opened)
+	}
+	if screen.selection.Len() == 0 {
+		t.Fatal("Cmd-click should toggle the grid selection")
+	}
+}
+
+func TestCatalogEnterOpensSelectedViewer(t *testing.T) {
+	screen, _, _, actions := newTestScreen()
+	tt := mui.NewTester(screen.View, 1000, 700)
+	if err := tt.ClickWith(mui.Cmd, "dog.png"); err != nil {
+		t.Fatal(err)
+	}
+	if actions.opened.ID != 0 {
+		t.Fatalf("Cmd-click should not open the viewer, got %+v", actions.opened)
+	}
+	tt.Key(0, mui.KeyEnter)
+	if actions.opened.ID != 2 {
+		t.Fatalf("Enter should open the selected item, got %+v", actions.opened)
+	}
+}
+
+func TestCatalogFilterBarFitsNarrowWindow(t *testing.T) {
+	screen, _, _, _ := newTestScreen()
+	const width = 922
+	tt := mui.NewTester(screen.View, width, 700)
+	tt.Frame()
+	for _, name := range []string{"3 items", "Newest first"} {
+		rect, ok := tt.Find(name)
+		if !ok {
+			t.Fatalf("%q not found: %q", name, tt.Texts())
+		}
+		if rect.X < 0 || rect.X+rect.W > width {
+			t.Fatalf("%q rect %+v overflows window width %d", name, rect, width)
+		}
+	}
+}
+
 func TestCatalogLoadsThumbnails(t *testing.T) {
 	screen, _, thumbs, _ := newTestScreen()
 	tt := mui.NewTester(screen.View, 1000, 700)
