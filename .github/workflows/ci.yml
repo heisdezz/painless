@@ -1,0 +1,237 @@
+name: CI and Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      # Cut a release even when the commits since the last tag carry no
+      # version bump (e.g. re-publishing after a failed asset upload).
+      force_release:
+        description: Publish a release even without versioned commits
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Build output, matching "out" in mygo.json.
+  BUILD_DIR: build
+
+jobs:
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.semver.outputs.version }}
+      tag: ${{ steps.semver.outputs.tag }}
+      bump: ${{ steps.semver.outputs.bump }}
+      should_release: ${{ steps.semver.outputs.should_release }}
+    steps:
+      # Full history and tags are needed to find the last release and scan the
+      # conventional commits since it (commit.md §4).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: semver
+        run: bash scripts/semver.sh
+
+  test:
+    name: Test and vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The pure-Go build is a product commitment (PRODUCT.md §4): test with
+      # CGo disabled so a accidental cgo dependency fails CI, not a release.
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -s -l . | grep -v '^$' || true)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # go vet does not run MyGo's UI-specific analysis; commit.md requires it
+      # per package. Vet every Go package under internal/ui.
+      - name: MyGo vet (UI packages)
+        run: |
+          status=0
+          while IFS= read -r dir; do
+            echo "::group::$dir"
+            (cd "$dir" && go tool mygo vet .) || status=1
+            echo "::endgroup::"
+          done < <(find internal/ui -type d)
+          exit $status
+
+      - name: Test
+        run: go test ./... -timeout 5m
+
+      # commit.md's race check. The race detector needs cgo, so re-enable it
+      # for this step only.
+      - name: Race (storage, state, wiring)
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go test -race \
+            ./internal/storage/... \
+            ./internal/state/... \
+            ./internal/wiring/... \
+            -timeout 10m
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [test, version]
+    timeout-minutes: 30
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS builds both architectures into one universal app and makes
+          # the .dmg, which needs macOS.
+          - name: macos
+            os: macos-latest
+            platform: darwin/universal
+            artifact: painless-macos
+          - name: linux
+            os: ubuntu-latest
+            platform: linux/amd64
+            artifact: painless-linux
+          - name: windows
+            os: windows-latest
+            platform: windows/amd64
+            artifact: painless-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Stamp version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tmp="$(mktemp)"
+          sed -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")/\1${VERSION}\2/" mygo.json > "$tmp"
+          mv "$tmp" mygo.json
+          echo "Building version $VERSION"
+
+      # The Linux build links GTK/WebKit, which the runner needs present.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libgl1-mesa-dev
+
+      - name: Build app
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          args=(-platform "$PLATFORM" -o "$BUILD_DIR")
+          # Ad-hoc sign on macOS so the bundle runs without a Developer ID.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            args+=(-sign -)
+          fi
+          go tool mygo build "${args[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ env.BUILD_DIR }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Release
+    needs: [build, version]
+    # Publish on main pushes whose commits call for a bump, or a manual
+    # dispatch with force_release. PRs build artifacts only.
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        (github.event_name == 'push' && needs.version.outputs.should_release == 'true') ||
+        (github.event_name == 'workflow_dispatch' && inputs.force_release == true)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files to publish
+        run: find dist -type f | sort
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          BUMP: ${{ needs.version.outputs.bump }}
+        run: |
+          # Publish the installers for each platform, not every file inside an
+          # app bundle. Stage them flat so each asset has a simple, unique name.
+          mkdir -p stage
+          for pattern in \
+            "dist/darwin-universal/*.dmg" \
+            "dist/linux-amd64/*.deb" \
+            "dist/linux-amd64/*.rpm" \
+            "dist/linux-amd64/*.tar.gz" \
+            "dist/linux-amd64/install.sh" \
+            "dist/windows-amd64/*.exe"; do
+            cp $pattern stage/ 2>/dev/null || true
+          done
+
+          assets=()
+          for file in stage/*; do
+            [ -f "$file" ] && assets+=("$file")
+          done
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "no release assets found" >&2
+            exit 1
+          fi
+          printf 'Assets:\n'
+          printf '  %s\n' "${assets[@]}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-running for the same version replaces its assets.
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" \
+              --title "Painless $VERSION" \
+              --target "$GITHUB_SHA" \
+              --latest \
+              --generate-notes
+          fi
+          echo "Published $TAG ($BUMP release)"
