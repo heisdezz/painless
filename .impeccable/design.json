@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-18T10:20:00Z",
+  "title": "Design System: Painless",
+  "extensions": {
+    "colorMeta": {
+      "stage-black": { "role": "neutral", "displayName": "Stage Black", "canonical": "#000000", "tonalRamp": ["#000000", "#060606", "#0d0d0d", "#1a1a1a", "#2d2d2d", "#4d4d4d", "#8f8f8f", "#e6e6e6"] },
+      "panel-black": { "role": "neutral", "displayName": "Panel Black", "canonical": "#0d0d0d", "tonalRamp": ["#000000", "#060606", "#0d0d0d", "#141414", "#1a1a1a", "#2d2d2d", "#4d4d4d", "#6b6b6b"] },
+      "raised-panel": { "role": "neutral", "displayName": "Raised Panel", "canonical": "#1a1a1a", "tonalRamp": ["#060606", "#0d0d0d", "#141414", "#1a1a1a", "#2d2d2d", "#3d3d3d", "#545454", "#8f8f8f"] },
+      "spotlight": { "role": "neutral", "displayName": "Spotlight", "canonical": "#2d2d2d", "tonalRamp": ["#0d0d0d", "#1a1a1a", "#202020", "#2d2d2d", "#3d3d3d", "#545454", "#8f8f8f", "#b4b4b4"] },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "#202020", "tonalRamp": ["#0d0d0d", "#1a1a1a", "#202020", "#2d2d2d", "#3d3d3d", "#545454", "#8f8f8f", "#b4b4b4"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#e6e6e6", "tonalRamp": ["#1a1a1a", "#2d2d2d", "#4d4d4d", "#6b6b6b", "#8f8f8f", "#b4b4b4", "#e6e6e6", "#ffffff"] },
+      "ink-secondary": { "role": "neutral", "displayName": "Ink Secondary", "canonical": "#b4b4b4", "tonalRamp": ["#1a1a1a", "#2d2d2d", "#4d4d4d", "#6b6b6b", "#8f8f8f", "#b4b4b4", "#d9d9d9", "#ffffff"] },
+      "ink-tertiary": { "role": "neutral", "displayName": "Ink Tertiary", "canonical": "#8f8f8f", "tonalRamp": ["#1a1a1a", "#2d2d2d", "#4d4d4d", "#6b6b6b", "#8f8f8f", "#b4b4b4", "#d9d9d9", "#ffffff"] },
+      "ink-faint": { "role": "neutral", "displayName": "Ink Faint", "canonical": "#6b6b6b", "tonalRamp": ["#0d0d0d", "#1a1a1a", "#2d2d2d", "#4d4d4d", "#6b6b6b", "#8f8f8f", "#b4b4b4", "#d9d9d9"] },
+      "stage-white": { "role": "primary", "displayName": "Stage White (primary, dark)", "canonical": "#eeeeee", "tonalRamp": ["#4d4d4d", "#6b6b6b", "#8f8f8f", "#b4b4b4", "#cccccc", "#eeeeee", "#f5f5f5", "#ffffff"] },
+      "paper-white": { "role": "neutral", "displayName": "Paper White (light bg)", "canonical": "#ffffff", "tonalRamp": ["#8a8a8a", "#b0b0b0", "#d9d9d9", "#eeeeee", "#f5f5f5", "#f8f8f8", "#fbfbfb", "#ffffff"] },
+      "bench-black": { "role": "primary", "displayName": "Bench Black (primary, light)", "canonical": "#222222", "tonalRamp": ["#000000", "#1f1f1f", "#222222", "#4d4d4d", "#666666", "#8a8a8a", "#b0b0b0", "#eeeeee"] },
+      "signal-blue": { "role": "secondary", "displayName": "Signal Blue", "canonical": "#60b1ff", "tonalRamp": ["#002c53", "#004a8c", "#0076e3", "#0091eb", "#4cb3ff", "#60b1ff", "#9cdaff", "#e6f4ff"] },
+      "signal-blue-deep": { "role": "secondary", "displayName": "Signal Blue Deep (light mode)", "canonical": "#0559ff", "tonalRamp": ["#00246b", "#003ba8", "#0559ff", "#3b7dff", "#6e9bff", "#a1bdff", "#cdd9ff", "#f0f4ff"] },
+      "info-blue": { "role": "tertiary", "displayName": "Info Blue", "canonical": "#4cb3ff", "tonalRamp": ["#001a35", "#002941", "#005389", "#0076e3", "#0091eb", "#4cb3ff", "#9cdaff", "#e6f4ff"] },
+      "status-green": { "role": "tertiary", "displayName": "Status Green", "canonical": "#80c933", "tonalRamp": ["#061f00", "#102e00", "#315a09", "#3e6f06", "#67a70a", "#80c933", "#bae48c", "#eaf7d9"] },
+      "status-amber": { "role": "tertiary", "displayName": "Status Amber", "canonical": "#ffbe45", "tonalRamp": ["#251700", "#3c2200", "#724600", "#8d5700", "#e39a00", "#ffbe45", "#ffdd9c", "#fff4dc"] },
+      "status-red": { "role": "tertiary", "displayName": "Status Red", "canonical": "#e95350", "tonalRamp": ["#340b0c", "#4b141a", "#441e1f", "#8a3334", "#aa3f3e", "#e95350", "#ffa8a0", "#ffd9d6"] }
+    },
+    "typographyMeta": {
+      "micro": { "displayName": "Micro Label", "purpose": "Uppercase status eyebrows (INDEXING ACTIVE); 700-800 weight, wide tracking." },
+      "label": { "displayName": "Section Label", "purpose": "Inspector-rail section headers and card metadata; the quiet hierarchy workhorse." },
+      "caption": { "displayName": "Caption", "purpose": "Filenames, counters, secondary metadata at 12-13px." },
+      "body": { "displayName": "Body", "purpose": "Default text and control labels at the 14px token size." },
+      "title": { "displayName": "Title", "purpose": "Drive identity and app wordmark; 700-800 weight." },
+      "heading": { "displayName": "Heading", "purpose": "Screen/empty-state titles; the largest chrome size allowed." }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": [
+      { "name": "viewer-min", "value": "800px", "purpose": "Viewer usability checkpoint (800x600): rail squeezes the stage, never wraps." },
+      { "name": "catalog-narrow", "value": "922px", "purpose": "Catalog filter bar fit checkpoint: search grows (basis 220, min 140, max 360); count/sort never shrink." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Media Card",
+      "kind": "card",
+      "refersTo": "media-card",
+      "description": "Catalog grid cell: thumbnail, filename, size line; fills and gains a primary hairline when selected.",
+      "html": "<div class=\"ds-media-card\"><div class=\"ds-media-card-thumb\"></div><div class=\"ds-media-card-name\">vacation.jpg</div><div class=\"ds-media-card-meta\">2.0 MB · JPEG</div></div>",
+      "css": ".ds-media-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #e6e6e6; width: 168px; box-sizing: border-box; cursor: pointer; transition: background 0.15s, border-color 0.15s; } .ds-media-card:hover { background: rgba(255,255,255,0.06); } .ds-media-card:focus-visible { outline: 1px solid #8f8f8f; outline-offset: 1px; } .ds-media-card-thumb { width: 148px; height: 110px; border-radius: 6px; background: linear-gradient(135deg, #2d2d2d, #1a1a1a); } .ds-media-card-name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-media-card-meta { font-size: 11px; color: #8f8f8f; } .ds-media-card.ds-selected { background: rgba(255,255,255,0.1); border-color: #eeeeee; }"
+    },
+    {
+      "name": "Format Tag",
+      "kind": "chip",
+      "refersTo": "format-tag",
+      "description": "Uppercase MIME-subtype badge (JPEG, MP4) identifying media format.",
+      "html": "<span class=\"ds-format-tag\">JPEG</span>",
+      "css": ".ds-format-tag { display: inline-block; background: #60b1ff; color: #000000; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "indexing-badge",
+      "description": "Monochrome primary action; stage-white fill on dark with near-black text.",
+      "html": "<button class=\"ds-btn-primary\">Import Media</button>",
+      "css": ".ds-btn-primary { background: #eeeeee; color: #111111; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; } .ds-btn-primary:hover { background: #ffffff; } .ds-btn-primary:focus-visible { outline: 2px solid #60b1ff; outline-offset: 1px; } .ds-btn-primary:active { background: #cccccc; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "indexing-badge",
+      "description": "Uppercase micro status eyebrow (e.g. INDEXING ACTIVE) on a primary-tinted pill.",
+      "html": "<span class=\"ds-status-badge\">INDEXING ACTIVE</span>",
+      "css": ".ds-status-badge { display: inline-flex; align-items: center; gap: 8px; background: #111111; color: #e6e6e6; border: 1px solid #666666; border-radius: 8px; padding: 6px 12px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }"
+    },
+    {
+      "name": "Inspector Rail",
+      "kind": "custom",
+      "refersTo": "inspector-rail",
+      "description": "Fixed 300px metadata column: hairline-divided sections, key left / value right, no card chrome.",
+      "html": "<aside class=\"ds-inspector-rail\"><div class=\"ds-rail-header\"><span class=\"ds-format-tag\">JPEG</span><span class=\"ds-rail-size\">2.0 MB</span></div><div class=\"ds-rail-section\">File Attributes<div class=\"ds-rail-row\"><span>Filename</span><span>vacation.jpg</span></div><div class=\"ds-rail-row\"><span>MIME Type</span><span>image/jpeg</span></div></div><div class=\"ds-rail-section\">Dimensions &amp; Format<div class=\"ds-rail-row\"><span>Resolution</span><span>1920 × 1080</span></div><div class=\"ds-rail-row\"><span>Aspect Ratio</span><span>16:9</span></div></div></aside>",
+      "css": ".ds-inspector-rail { width: 300px; background: #000000; color: #b4b4b4; font-size: 12px; padding: 16px; box-sizing: border-box; border-left: 1px solid #1a1a1a; } .ds-rail-header { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; } .ds-rail-size { font-size: 12px; color: #e6e6e6; } .ds-rail-section { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; color: #8f8f8f; border-top: 1px solid #202020; padding: 12px 0; display: flex; flex-direction: column; gap: 8px; } .ds-rail-row { display: flex; justify-content: space-between; gap: 12px; } .ds-rail-row span:last-child { text-align: right; color: #e6e6e6; }"
+    },
+    {
+      "name": "Viewer Top Bar",
+      "kind": "nav",
+      "refersTo": "viewer-top-bar",
+      "description": "Borderless 52px theater bar: back, filename + counter, spacer, icon actions.",
+      "html": "<div class=\"ds-viewer-bar\"><button class=\"ds-icon-btn\" aria-label=\"Back\">←</button><span class=\"ds-bar-name\">vacation.jpg</span><span class=\"ds-bar-count\">1 of 2</span><span class=\"ds-bar-spacer\"></span><button class=\"ds-icon-btn\" aria-label=\"Previous\">‹</button><button class=\"ds-icon-btn\" aria-label=\"Next\">›</button><button class=\"ds-icon-btn\" aria-label=\"Info\">ⓘ</button><button class=\"ds-icon-btn\" aria-label=\"Close\">✕</button></div>",
+      "css": ".ds-viewer-bar { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 12px; background: #000000; color: #e6e6e6; } .ds-bar-name { font-size: 13px; font-weight: 600; } .ds-bar-count { font-size: 12px; color: #8f8f8f; } .ds-bar-spacer { flex: 1; } .ds-icon-btn { background: transparent; border: none; color: #8f8f8f; font-size: 16px; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; transition: color 0.15s, background 0.15s; } .ds-icon-btn:hover { color: #e6e6e6; background: rgba(255,255,255,0.1); } .ds-icon-btn:focus-visible { outline: 1px solid #8f8f8f; }"
+    },
+    {
+      "name": "Video Transport",
+      "kind": "custom",
+      "refersTo": "inspector-rail",
+      "description": "Slim unboxed transport row at the stage foot; sits directly on the stage, never a card.",
+      "html": "<div class=\"ds-transport\"><button class=\"ds-icon-btn\" aria-label=\"Play\">▶</button><span class=\"ds-transport-time\">00:00 / 02:05</span><div class=\"ds-transport-slider\"><div class=\"ds-transport-fill\"></div></div><button class=\"ds-icon-btn\" aria-label=\"Mute\">🔊</button></div>",
+      "css": ".ds-transport { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #000000; color: #e6e6e6; } .ds-transport-time { font-size: 12px; color: #b4b4b4; white-space: nowrap; } .ds-transport-slider { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.16); } .ds-transport-fill { width: 12%; height: 100%; border-radius: 2px; background: #eeeeee; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Black Box Theater",
+    "overview": "Painless is a dark room where the media performs. The interface is the theater's architecture — walls, wings, and an inspector's rail — built so that nothing competes with the photograph or the frame on stage. Chrome recedes: surfaces are black or near-black panels, separated by 1px hairlines rather than shadows, and the brightest surface on any screen is the media itself. The system's one structural indulgence is the inspector rail: a fixed 300px column of quiet, right-aligned facts that sits beside the stage like production notes taped to the wing. Density is high but calm: micro-labels at 9-10px uppercase with wide letter-spacing, UI text at 11-14px, and generous structural padding around content zones. Depth is never faked with glow — a surface is either a different tonal step or it is divided by a hairline.",
+    "keyCharacteristics": [
+      "Flat black surfaces, 1px hairline borders, zero shadows",
+      "Monochrome primary accent (near-white on dark, near-black on light); blue reserved for tags/info",
+      "Fixed inspector rail (300px) for metadata; media stage takes all remaining space",
+      "Small, quiet UI type (9-14px) with uppercase micro-labels at 700-800 weight",
+      "Tonal layering for elevation (BgBase → BgContainer → BgElevated → fills)"
+    ],
+    "rules": [
+      { "name": "The Receding Chrome Rule", "body": "No structural surface may be brighter than Raised Panel (#1a1a1a) in dark mode. If a UI element draws more attention than the media beside it, it is wrong.", "section": "colors" },
+      { "name": "The Monochrome Voice Rule", "body": "The primary accent is grayscale. Chromatic color (blue, green, amber, red) speaks only for meaning — status, format, information — never for style. If a colored element carries no semantic job, make it ink.", "section": "colors" },
+      { "name": "The Small Chrome Rule", "body": "Interface text lives between 9px and 14px. Larger sizes are reserved for content titles and the drive identity — never for buttons or labels.", "section": "typography" },
+      { "name": "The Flat Stage Rule", "body": "Surfaces never cast shadows. A new layer earns presence by one tonal step up (or a hairline), never by elevation.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do consume Lobe tokens (tk.*) for every color, radius, and font size — no hardcoded hex in UI code.",
+      "Do build chrome as borderless bars and rows with 1px hairline dividers; let the media own the brightest pixels.",
+      "Do use tonal steps (BgBase → BgContainer → BgElevated) or hairlines for depth; state changes use alpha fills (10-16%).",
+      "Do verify renders in dark mode (the flagship) at narrow widths — 800×600 viewer and 922px catalog are the regression checkpoints.",
+      "Do keep UI text at 9-14px and create hierarchy with weight, case, and letter-spacing."
+    ],
+    "donts": [
+      "Don't design like a website — no boxed cards around player controls, no per-row icons in the metadata rail, no web-page chrome (boxed headers, pill toolbars). This is a binding product commitment.",
+      "Don't add box-shadows or glow; the system is flat by construction.",
+      "Don't use chromatic color decoratively — blue is for tags/info, green/amber/red are semantic only.",
+      "Don't let structural chrome exceed Raised Panel (#1a1a1a) in dark mode.",
+      "Don't wrap the inspector rail or stack it below the stage; it is a fixed 300px column that squeezes the stage."
+    ]
+  }
+}
