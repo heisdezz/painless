@@ -1,10 +1,15 @@
 package albums
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,6 +183,89 @@ func (m *mockMediaRepo) List(ctx context.Context, params domain.MediaListParams)
 		Items: filtered,
 		Total: len(filtered),
 	}, nil
+}
+
+func TestAlbumMemberCardOpensViewer(t *testing.T) {
+	repo := newMockAlbumRepo()
+	albumID := int64(1)
+	mediaRepo := &mockMediaRepo{items: []domain.MediaItem{
+		{ID: 101, AlbumID: &albumID, CurrentRelativePath: "photos/beach.jpg", FileSize: 2048, MimeType: "image/jpeg"},
+	}}
+
+	var opened domain.MediaItem
+	screen := New(Options{
+		Albums:     repo,
+		Media:      mediaRepo,
+		OnOpenItem: func(item domain.MediaItem) { opened = item },
+	})
+	screen.OpenAlbum(repo.summaries[0])
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	if err := tt.Click("beach.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if opened.ID != 101 {
+		t.Fatalf("member click opened item %+v, want id 101", opened)
+	}
+}
+
+func TestAlbumMemberCardNilCallback(t *testing.T) {
+	repo := newMockAlbumRepo()
+	albumID := int64(1)
+	mediaRepo := &mockMediaRepo{items: []domain.MediaItem{
+		{ID: 101, AlbumID: &albumID, CurrentRelativePath: "photos/beach.jpg", FileSize: 2048, MimeType: "image/jpeg"},
+	}}
+
+	screen := New(Options{Albums: repo, Media: mediaRepo})
+	screen.OpenAlbum(repo.summaries[0])
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	if err := tt.Click("beach.jpg"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAlbumMemberThumbnailsLoad(t *testing.T) {
+	repo := newMockAlbumRepo()
+	albumID := int64(1)
+	mediaRepo := &mockMediaRepo{items: []domain.MediaItem{
+		{ID: 101, FileHash: "hash-101", AlbumID: &albumID, CurrentRelativePath: "photos/beach.jpg", FileSize: 2048, MimeType: "image/jpeg"},
+	}}
+	thumbs := &stubThumbs{}
+
+	screen := New(Options{Albums: repo, Media: mediaRepo, Thumbs: thumbs})
+	screen.OpenAlbum(repo.summaries[0])
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(screen.bitmaps) == 0 {
+		time.Sleep(20 * time.Millisecond)
+		tt.Frame()
+	}
+	if thumbs.calls.Load() == 0 {
+		t.Fatal("thumbnail renderer was never called")
+	}
+	if len(screen.bitmaps) == 0 {
+		t.Fatal("no member thumbnail was decoded")
+	}
+}
+
+// stubThumbs renders a tiny PNG, mirroring the catalog's fake thumbnailer.
+type stubThumbs struct{ calls atomic.Int64 }
+
+func (f *stubThumbs) Get(context.Context, domain.MediaItem) ([]byte, error) {
+	f.calls.Add(1)
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x * 30), G: uint8(y * 30), B: 200, A: 255})
+		}
+	}
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, img); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
 func TestAlbumScreen_EmptyState(t *testing.T) {

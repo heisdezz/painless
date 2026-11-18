@@ -7,6 +7,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 
+	"painless/internal/domain"
 	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/ui/screens/albums"
@@ -44,19 +45,21 @@ func New(store *state.Store) *Shell {
 		store = state.NewStore()
 	}
 	logger := logging.New(logging.Options{})
-	return &Shell{
+	shell := &Shell{
 		store:       store,
 		toaster:     newToaster(store),
 		catalog:     catalog.New(catalog.Options{}),
-		albums:      albums.New(albums.Options{}),
 		dashboard:   dashboard.New(dashboard.Options{}),
 		discover:    discover.New(discover.Options{Store: store}),
 		logger:      logger,
 		settings:    settings.New(settings.Options{Logs: logger, Toast: store.Notify}),
 		viewer:      newViewer(store, nil, "", nil, nil),
+		albums:      albums.New(albums.Options{}),
 		navWidth:    220,
 		navExpanded: true,
 	}
+	shell.SetAlbums(shell.albums)
+	return shell
 }
 
 // Store returns the shell's state store.
@@ -74,9 +77,22 @@ func (s *Shell) SetCatalog(source catalog.Source, thumbs catalog.Thumbnailer, ac
 // Catalog returns the library screen, for tests and further wiring.
 func (s *Shell) Catalog() *catalog.Screen { return s.catalog }
 
-// SetAlbums configures the album gallery screen.
+// SetAlbums configures the album gallery screen and links its member cards
+// to the media viewer. The callback reads the current viewer at click time,
+// so per-drive viewer swaps stay correct.
 func (s *Shell) SetAlbums(a *albums.Screen) {
+	if a != nil {
+		a.SetOnOpenItem(s.openInViewer)
+	}
 	s.albums = a
+}
+
+// openInViewer loads an item into the current viewer screen and navigates to it.
+func (s *Shell) openInViewer(item domain.MediaItem) {
+	if v := s.viewer; v != nil {
+		v.Open(item.ID)
+	}
+	s.store.Navigate(state.ScreenViewer)
 }
 
 // Albums returns the album gallery screen.

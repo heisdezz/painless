@@ -41,6 +41,9 @@ type Options struct {
 	RefreshWindow func()
 	DriveRoot     string
 	ReadOnly      bool
+	// OnOpenItem, when set, is invoked when a member card is clicked; the
+	// shell attaches the media viewer deep-link here.
+	OnOpenItem func(item domain.MediaItem)
 }
 
 // Screen manages album browsing, member viewing, and modal lifecycle.
@@ -51,6 +54,16 @@ type Screen struct {
 	refreshWindow func()
 	driveRoot     string
 	readOnly      bool
+	onOpenItem    func(domain.MediaItem)
+
+	// Member-thumbnail cache. bitmapMu guards the maps; workers never touch
+	// *mui.Context, decoded bitmaps are only swapped in on the UI thread.
+	bitmapMu sync.Mutex
+	pending  map[string]bool
+	fetched  map[string][]byte
+	limits   chan struct{}
+	services mui.Services
+	bitmaps  map[string]*mui.Bitmap
 
 	// Gallery & Detail state
 	summaries     []domain.AlbumSummary
@@ -98,9 +111,20 @@ func New(opts Options) *Screen {
 		driveRoot:     opts.DriveRoot,
 		readOnly:      opts.ReadOnly || opts.Albums == nil,
 		deleteMode:    "soft",
+		onOpenItem:    opts.OnOpenItem,
+		pending:       make(map[string]bool),
+		fetched:       make(map[string][]byte),
+		limits:        make(chan struct{}, 4),
+		bitmaps:       make(map[string]*mui.Bitmap),
 	}
 	s.Reload()
 	return s
+}
+
+// SetOnOpenItem attaches the open-in-viewer action after construction. Call
+// before the window is shown; the callback runs on the UI thread.
+func (s *Screen) SetOnOpenItem(fn func(item domain.MediaItem)) {
+	s.onOpenItem = fn
 }
 
 // Reload refreshes the list of album summaries.
@@ -121,10 +145,11 @@ func (s *Screen) Reload() {
 
 // View builds one frame of the album screen.
 func (s *Screen) View(c *mui.Context) {
+	s.services = c.Services()
 	uitheme.Apply(c)
 	tk := lobetheme.TokensOf(c)
 
-	container := mui.Column(c).Fill().Padding(20, 24).Gap(16)
+	container := mui.Column(c).Fill().Padding(28, 28, 40).Gap(16)
 	container.Children(func() {
 		if s.selectedAlbum == nil {
 			s.galleryView(c, tk)
@@ -207,4 +232,53 @@ func (s *Screen) requestRedraw() {
 	if s.refreshWindow != nil {
 		s.refreshWindow()
 	}
+}
+
+// bitmapFor serves decoded member thumbnails from a UI-thread cache and loads
+// missing ones on a bounded worker pool, mirroring the catalog screen.
+func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
+	if bitmap, ok := s.bitmaps[item.FileHash]; ok {
+		return bitmap
+	}
+	s.bitmapMu.Lock()
+	if data, ok := s.fetched[item.FileHash]; ok {
+		delete(s.fetched, item.FileHash)
+		s.bitmapMu.Unlock()
+		bitmap, err := mui.DecodeBitmap(data)
+		if err != nil {
+			return nil
+		}
+		s.bitmaps[item.FileHash] = bitmap
+		return bitmap
+	}
+	if s.pending[item.FileHash] || s.thumbs == nil {
+		s.bitmapMu.Unlock()
+		return nil
+	}
+	s.pending[item.FileHash] = true
+	services := s.services
+	s.bitmapMu.Unlock()
+
+	go func(hash string, media domain.MediaItem) {
+		defer func() {
+			s.bitmapMu.Lock()
+			delete(s.pending, hash)
+			s.bitmapMu.Unlock()
+		}()
+		select {
+		case s.limits <- struct{}{}:
+			defer func() { <-s.limits }()
+		default:
+			return
+		}
+		data, err := s.thumbs.Get(context.Background(), media)
+		if err != nil {
+			return
+		}
+		s.bitmapMu.Lock()
+		s.fetched[hash] = data
+		s.bitmapMu.Unlock()
+		services.Invalidate()
+	}(item.FileHash, item)
+	return nil
 }
