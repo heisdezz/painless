@@ -54,22 +54,11 @@ func (s *Screen) gridView(c *mui.Context) {
 	}
 }
 
-// skeletonGrid holds the grid's place while the first page loads: tiles the
-// size and chrome of the real card, filled with sweeping skeleton blocks. It
-// keeps its own scroll state so it never borrows the real grid's.
+// skeletonGridView holds the grid's place while the first page loads: tiles
+// the size and chrome of the real card, filled with sweeping skeleton blocks.
+// It keeps its own scroll state so it never borrows the real grid's.
 func (s *Screen) skeletonGridView(c *mui.Context) {
-	tk := lobetheme.TokensOf(c)
 	mui.GridView(c, &s.skeletonGrid, 30, mediacard.CardWidth, mediacard.CardHeight, func(int) {
-		mui.Column(c).Gap(8).Padding(10).Radius(tk.BorderRadius).
-			Width(mediacard.CardWidth).AlignSelf(mui.Stretch).
-			Border(1, tk.BorderSecondary).
-			Children(func() {
-				display.Skeleton(c, display.SkeletonProps{
-					Width: mediacard.PreviewWidth, Height: mediacard.PreviewHeight,
-					Animation: display.SkeletonSweep,
-				})
-				display.Skeleton(c, display.SkeletonProps{Width: 96, Height: 12})
-				display.Skeleton(c, display.SkeletonProps{Width: 60, Height: 11})
-			})
+		mediacard.SkeletonTile(c)
 	}).Grow(1).Label("catalog-loading")
 }
