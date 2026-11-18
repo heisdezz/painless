@@ -102,17 +102,37 @@ func (s *Screen) chooseAlbumFolder() {
 			return
 		}
 		path, err = scanDirectory(root, path)
+		accepted := make(chan bool, 1)
 		s.publish(func() {
 			if s.isScanning || s.isExecuting {
+				accepted <- false
 				return
 			}
 			if err != nil {
 				s.lastScanErr = err.Error()
+				accepted <- false
 				return
 			}
 			s.albumFolder = path
-			s.startScanLocked(path, s.albumScannerFactory, true)
+			if s.onAlbumFolderChanged == nil {
+				s.startScanLocked(path, s.albumScannerFactory, true)
+			}
+			accepted <- true
 		})
+		if !<-accepted {
+			return
+		}
+		if s.onAlbumFolderChanged != nil {
+			// Dispatch the hook outside publish's lock: it reopens the library
+			// and rebuilds this screen, which would deadlock from inside.
+			apply := func() { s.onAlbumFolderChanged(path) }
+			if s.update != nil {
+				s.update(apply)
+			} else {
+				apply()
+			}
+			return
+		}
 	}()
 }
 

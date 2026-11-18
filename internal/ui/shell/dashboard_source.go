@@ -38,23 +38,29 @@ type dashboardSource struct {
 // GetDashboardStats aggregates media counts, album count, disk usage and
 // the album storage location for the stat cards.
 func (d dashboardSource) GetDashboardStats(ctx context.Context) (dashboard.Stats, error) {
-	page, err := d.media.List(ctx, domain.MediaListParams{Limit: 1})
+	count, err := d.media.Count(ctx)
 	if err != nil {
 		return dashboard.Stats{}, err
 	}
-	stats := dashboard.Stats{TotalMedia: int64(page.Total)}
+	stats := dashboard.Stats{TotalMedia: count}
 
 	albums, err := d.albums.List(ctx)
 	if err != nil {
 		return dashboard.Stats{}, err
 	}
 	stats.TotalAlbums = int64(len(albums))
-	stats.AlbumLocation = d.albumFolder()
+	if d.albumFolder != nil {
+		stats.AlbumLocation = d.albumFolder()
+	}
 
-	if drive, ok := d.store.State.ActiveDrive(); ok {
-		stats.StorageTotal = drive.TotalBytes
-		stats.StorageUsed = drive.TotalBytes - drive.FreeBytes
-		stats.UsedPercent = drive.UsedPercentage
+	if d.store != nil {
+		if d.store != nil {
+			if drive, ok := d.store.State.ActiveDrive(); ok {
+				stats.StorageTotal = drive.TotalBytes
+				stats.StorageUsed = drive.TotalBytes - drive.FreeBytes
+				stats.UsedPercent = drive.UsedPercentage
+			}
+		}
 	}
 	return stats, nil
 }

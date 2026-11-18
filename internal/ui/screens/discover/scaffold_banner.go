@@ -9,6 +9,8 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	lobetheme "github.com/lobehub/lobe-mygo/pkg/theme"
+
+	"painless/internal/fileops"
 )
 
 // scaffoldBanner flags missing library folders so the user can rescan before
@@ -20,19 +22,35 @@ func (s *Screen) scaffoldBanner(c *mui.Context, tk *lobetheme.Tokens) {
 	s.mu.RLock()
 	folder := s.albumFolder
 	s.mu.RUnlock()
+
 	folders := []string{
-		filepath.Join(s.driveRoot, ".painless"),
-		folder,
-		filepath.Join(s.driveRoot, "unknown"),
+		fileops.SettingsDir(s.driveRoot),
+		fileops.AlbumsDir(s.driveRoot),
+		fileops.UnknownDir(s.driveRoot),
 	}
+	if folder != "" {
+		folders = append(folders, folder)
+	}
+
+	seenPath := make(map[string]bool, len(folders))
+	seenName := make(map[string]bool, len(folders))
 	missing := make([]string, 0, len(folders))
-	for _, folder := range folders {
-		if folder == "" {
+	for _, path := range folders {
+		if seenPath[path] {
 			continue
 		}
-		if info, err := os.Stat(folder); err != nil || !info.IsDir() {
-			missing = append(missing, filepath.Base(folder))
+		seenPath[path] = true
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			continue
 		}
+		// The configured album folder and the managed albums directory can
+		// share a base name; report each one only once.
+		name := filepath.Base(path)
+		if seenName[name] {
+			continue
+		}
+		seenName[name] = true
+		missing = append(missing, name)
 	}
 	if len(missing) == 0 {
 		return

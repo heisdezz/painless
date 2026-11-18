@@ -66,6 +66,10 @@ type Options struct {
 	RefreshWindow       func()
 	Update              func(func()) // Dispatches worker results to the UI thread.
 	DriveRoot           string
+	// AlbumFolder overrides the default library folder location.
+	AlbumFolder string
+	// OnAlbumFolderChanged tells the app to reopen the library at the new root.
+	OnAlbumFolderChanged func(path string)
 	// CatalogCount reports how many items are indexed on the active drive.
 	CatalogCount func() int
 	// DirectoryPicker opens a native folder chooser. Injected in tests.
@@ -74,25 +78,26 @@ type Options struct {
 
 // Screen coordinates the scanner, staging table, and consolidation modal.
 type Screen struct {
-	store               *state.Store
-	stager              Stager
-	scannerFactory      ScannerFactory
-	albumScannerFactory ScannerFactory
-	albumSource         AlbumSource
-	mediaStore          fileops.MediaStore
-	albumStore          fileops.AlbumStore
-	refreshWindow       func()
-	update              func(func())
-	driveRoot           string
-	albumFolder         string
-	ignoreRules         []string
-	ignoreInput         string
-	catalogCount        func() int
-	directoryPicker     func(defaultPath string) (string, error)
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	jobs                sync.WaitGroup
-	closed              bool
+	store                *state.Store
+	stager               Stager
+	scannerFactory       ScannerFactory
+	albumScannerFactory  ScannerFactory
+	albumSource          AlbumSource
+	mediaStore           fileops.MediaStore
+	albumStore           fileops.AlbumStore
+	refreshWindow        func()
+	update               func(func())
+	driveRoot            string
+	albumFolder          string
+	ignoreRules          []string
+	ignoreInput          string
+	catalogCount         func() int
+	directoryPicker      func(defaultPath string) (string, error)
+	onAlbumFolderChanged func(string)
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	jobs                 sync.WaitGroup
+	closed               bool
 
 	// Scanner state
 	targetPath  string
@@ -130,30 +135,31 @@ func New(opts Options) *Screen {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	albumFolder := ""
-	if opts.DriveRoot != "" {
+	albumFolder := opts.AlbumFolder
+	if albumFolder == "" && opts.DriveRoot != "" {
 		albumFolder = filepath.Join(opts.DriveRoot, "media", "albums")
 	}
 	return &Screen{
-		ctx:                 ctx,
-		cancel:              cancel,
-		update:              opts.Update,
-		driveRoot:           opts.DriveRoot,
-		albumFolder:         albumFolder,
-		targetPath:          opts.DriveRoot,
-		catalogCount:        opts.CatalogCount,
-		directoryPicker:     opts.DirectoryPicker,
-		store:               opts.Store,
-		stager:              stager,
-		scannerFactory:      opts.ScannerFactory,
-		albumScannerFactory: opts.AlbumScannerFactory,
-		albumSource:         opts.AlbumSource,
-		mediaStore:          opts.MediaStore,
-		albumStore:          opts.AlbumStore,
-		refreshWindow:       opts.RefreshWindow,
-		albumMap:            make(map[string]int64),
-		stagedOps:           stager.ListOperations(),
-		summary:             stager.Summary(),
+		ctx:                  ctx,
+		cancel:               cancel,
+		update:               opts.Update,
+		driveRoot:            opts.DriveRoot,
+		albumFolder:          albumFolder,
+		targetPath:           opts.DriveRoot,
+		catalogCount:         opts.CatalogCount,
+		directoryPicker:      opts.DirectoryPicker,
+		onAlbumFolderChanged: opts.OnAlbumFolderChanged,
+		store:                opts.Store,
+		stager:               stager,
+		scannerFactory:       opts.ScannerFactory,
+		albumScannerFactory:  opts.AlbumScannerFactory,
+		albumSource:          opts.AlbumSource,
+		mediaStore:           opts.MediaStore,
+		albumStore:           opts.AlbumStore,
+		refreshWindow:        opts.RefreshWindow,
+		albumMap:             make(map[string]int64),
+		stagedOps:            stager.ListOperations(),
+		summary:              stager.Summary(),
 	}
 }
 

@@ -11,14 +11,16 @@ import (
 	"painless/internal/domain"
 )
 
-// card draws a titled section shared by every settings tab: an elevated
-// rounded panel with a small header and the caller's body beneath it.
+// card draws a titled section shared by every settings tab: a quiet panel
+// step with a 1px hairline and a small uppercase-style section header.
 func card(c *mui.Context, title string, body func()) {
 	tk := lobetheme.TokensOf(c)
-	mui.Column(c).Shrink(0).MaxWidthPercent(100).Padding(14, 16).Gap(10).
-		Background(tk.BgElevated).Radius(8).Children(func() {
+	mui.Column(c).Shrink(0).MaxWidthPercent(100).Padding(16, 20).Gap(12).
+		Background(tk.BgContainer).Border(1, tk.BorderSecondary).
+		Radius(tk.BorderRadius).Children(func() {
 		if title != "" {
-			mui.Text(c, title).FontSize(13).FontWeight(600).TextColor(tk.Text)
+			mui.Text(c, title).FontSize(tk.FontSizeSM - 2).FontWeight(800).
+				LetterSpacing(1).TextColor(tk.TextTertiary)
 		}
 		body()
 	})
@@ -28,8 +30,9 @@ func card(c *mui.Context, title string, body func()) {
 func fieldRow(c *mui.Context, label, value string) {
 	tk := lobetheme.TokensOf(c)
 	mui.Row(c).Shrink(0).Gap(12).AlignItems(mui.Center).Children(func() {
-		mui.Text(c, label).FontSize(12).TextColor(tk.TextSecondary).Width(110).Shrink(0)
-		mui.Text(c, value).FontSize(13).Grow(1)
+		mui.Text(c, label).FontSize(tk.FontSizeSM - 1).TextColor(tk.TextTertiary).
+			Width(120).Shrink(0)
+		mui.Text(c, value).FontSize(tk.FontSizeSM).Grow(1)
 	})
 }
 

@@ -62,9 +62,10 @@ func (s *Screen) logsTab(c *mui.Context) {
 // export button.
 func (s *Screen) logControls(c *mui.Context) {
 	mui.Row(c).Shrink(0).Gap(12).AlignItems(mui.Center).Children(func() {
-		mui.Box(c).Width(260).Shrink(0).Children(func() {
+		mui.Box(c).Width(280).Shrink(0).Children(func() {
 			field.SearchBar(c, &s.logSearch, field.SearchBarProps{
 				Placeholder: "Filter messages…",
+				Variant:     field.InputFilled,
 				Size:        lobetheme.Small,
 			})
 		})

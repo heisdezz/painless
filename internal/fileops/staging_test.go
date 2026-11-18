@@ -72,6 +72,7 @@ func TestScaffoldLibrary(t *testing.T) {
 		UnknownDir(tempDir),
 		ThumbnailsDir(tempDir),
 		BackupsDir(tempDir),
+		SettingsDir(tempDir),
 	}
 
 	for _, d := range expectedDirs {

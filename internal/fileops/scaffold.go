@@ -19,6 +19,9 @@ const (
 	// BackupsDirName is the hidden directory storing SQLite database snapshots.
 	BackupsDirName = ".media_backups"
 
+	// SettingsDirName is the hidden directory storing per-drive app settings.
+	SettingsDirName = ".painless"
+
 	// DatabaseFileName is the portable SQLite database name.
 	DatabaseFileName = ".media_library.db"
 )
@@ -43,6 +46,11 @@ func BackupsDir(driveRoot string) string {
 	return filepath.Join(driveRoot, BackupsDirName)
 }
 
+// SettingsDir returns the absolute path to the settings directory on the target drive.
+func SettingsDir(driveRoot string) string {
+	return filepath.Join(driveRoot, SettingsDirName)
+}
+
 // ScaffoldLibrary creates the standard directory hierarchy on the specified drive root.
 func ScaffoldLibrary(driveRoot string) error {
 	if driveRoot == "" {
@@ -54,6 +62,7 @@ func ScaffoldLibrary(driveRoot string) error {
 		UnknownDir(driveRoot),
 		ThumbnailsDir(driveRoot),
 		BackupsDir(driveRoot),
+		SettingsDir(driveRoot),
 	}
 
 	for _, dir := range dirs {

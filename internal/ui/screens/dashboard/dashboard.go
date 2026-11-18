@@ -143,7 +143,13 @@ func (s *Screen) View(c *mui.Context) {
 
 	s.mu.RLock()
 	active := s.activeDrive
+	stale := s.source != nil && !s.loading && time.Since(s.lastLoadedAt) > 5*time.Second
 	s.mu.RUnlock()
+	if stale {
+		// Keep counts fresh even when a database is changed by a worker or
+		// another process without publishing a media-change event.
+		s.Reload()
+	}
 
 	mui.Scroll(c).Grow(1).Basis(0).Children(func() {
 		mui.Column(c).Fill().Padding(28, 28, 40).Gap(24).Children(func() {

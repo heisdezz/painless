@@ -178,15 +178,15 @@ var tabItems = []nav.TabItem{
 
 // View builds one frame of the settings screen.
 func (s *Screen) View(c *mui.Context) {
-	_ = lobetheme.TokensOf(c)
+	tk := lobetheme.TokensOf(c)
 	s.drainAsync()
 	s.syncMobile()
-	// Match the 28 DIP horizontal padding of the shell's screen heading so
-	// the tabs and each tab's controls line up with the title.
-	mui.Column(c).Fill().Padding(0, 28, 24).Gap(12).Children(func() {
+	mui.Column(c).Fill().Padding(0, 28, 40).Gap(16).Children(func() {
+		mui.Box(c).Height(1).FillWidth().Background(tk.Border)
 		nav.Tabs(c, &s.tab, nav.TabsProps{
 			Items:   tabItems,
 			Variant: nav.TabsSquare,
+			Size:    lobetheme.Small,
 		}, func(i int) {
 			switch i {
 			case 0:

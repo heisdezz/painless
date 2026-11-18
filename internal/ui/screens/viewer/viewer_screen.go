@@ -75,9 +75,14 @@ type Screen struct {
 	loadedHash      string
 
 	// Video state
-	videoPlayer  *mui.VideoPlayer
-	videoDecoder *FFmpegDecoder
-	videoHash    string
+	videoPlayer *mui.VideoPlayer
+	videoHash   string
+
+	// Scrub state: the slider holds its own value while dragging and seeks
+	// once on release so the player is not restarted every frame.
+	seekPos   float64
+	seekAt    time.Time
+	scrubbing bool
 
 	mu sync.RWMutex
 }

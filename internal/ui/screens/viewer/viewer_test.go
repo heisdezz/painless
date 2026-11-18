@@ -158,10 +158,10 @@ func TestViewer_MetadataDrawer(t *testing.T) {
 	screen.OpenItem(items[0], items)
 
 	tt := mui.NewTester(screen.View, 1000, 700)
-	if !tt.HasText("Media Details & EXIF") {
-		t.Fatalf("expected drawer title, got: %q", tt.Texts())
+	if !tt.HasText("JPEG") || !tt.HasText("vacation.jpg") {
+		t.Fatalf("expected the rail header row, got: %q", tt.Texts())
 	}
-	if !tt.HasText("File Attributes") || !tt.HasText("EXIF Camera Details") {
+	if !tt.HasText("FILE ATTRIBUTES") || !tt.HasText("EXIF CAMERA DETAILS") {
 		t.Fatalf("expected accordion section headers, got: %q", tt.Texts())
 	}
 	if !tt.HasText("Sony") || !tt.HasText("A7 IV") {
@@ -256,19 +256,49 @@ func TestViewer_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-func TestFFmpegDecoder_ConfigDefaults(t *testing.T) {
-	dur := 10 * time.Second
-	cfg := FFmpegDecoderConfig{
-		FilePath: "nonexistent.mp4",
-		Duration: dur,
+type fakeVideoDecoder struct{}
+
+func (fakeVideoDecoder) Next() (mui.VideoFrame, error) {
+	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
+	return mui.VideoFrame{Image: img, Duration: 40 * time.Millisecond}, nil
+}
+
+func (fakeVideoDecoder) Rewind() error { return nil }
+
+func TestViewer_PauseButtonStopsPlayback(t *testing.T) {
+	items := testMediaItems()
+	screen := New(Options{})
+	screen.OpenItem(items[1], items)
+
+	player, err := mui.NewVideoPlayer(fakeVideoDecoder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pretend the decoder was already created so the view keeps this player.
+	screen.mu.Lock()
+	screen.videoPlayer = player
+	screen.videoHash = items[1].FileHash
+	screen.mu.Unlock()
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	tt.Frame()
+	if !player.Playing() {
+		t.Fatal("video should autoplay")
 	}
 
-	// Should handle missing file safely without crashing
-	d, err := NewFFmpegDecoder(cfg)
-	if err == nil && d != nil {
-		if d.Duration() != dur {
-			t.Errorf("expected duration %v, got %v", dur, d.Duration())
-		}
-		_ = d.Close()
+	if err := tt.Click("Pause"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if player.Playing() {
+		t.Fatal("pause button did not stop playback")
+	}
+
+	if err := tt.Click("Play"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !player.Playing() {
+		t.Fatal("play button did not resume playback")
 	}
 }

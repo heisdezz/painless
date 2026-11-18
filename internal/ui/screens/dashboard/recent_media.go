@@ -7,12 +7,13 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
+	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	lobetheme "github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"painless/internal/domain"
+	"painless/internal/ui/components/mediagrid"
 )
 
 func (s *Screen) recentMediaSection(c *mui.Context, tk *lobetheme.Tokens) {
@@ -65,48 +66,52 @@ func (s *Screen) recentMediaSection(c *mui.Context, tk *lobetheme.Tokens) {
 			return
 		}
 
-		// 4. Horizontal preview grid (8 items)
-		mui.Row(c).Wrap().Gap(14).Children(func() {
-			for _, item := range media {
-				s.mediaPreviewCard(c, tk, item, media)
-			}
-		})
+		// 4. Wrapped strip of fixed-size tiles, identical to the library grid.
+		cards := make([]mediagrid.Item, 0, len(media))
+		for _, item := range media {
+			cards = append(cards, s.mediaPreviewCard(item, media))
+		}
+		mediagrid.Strip(c, cards)
 	})
 }
 
-func (s *Screen) mediaPreviewCard(c *mui.Context, tk *lobetheme.Tokens, item domain.MediaItem, allItems []domain.MediaItem) {
-	c.Key(fmt.Sprintf("recent-media-%d", item.ID))
+func (s *Screen) mediaPreviewCard(item domain.MediaItem, allItems []domain.MediaItem) mediagrid.Item {
+	name := filepath.Base(item.CurrentRelativePath)
+	duration := ""
+	if item.DurationSeconds != nil && *item.DurationSeconds > 0 {
+		duration = formatMediaDuration(*item.DurationSeconds)
+	}
 
-	bitmap := s.bitmapFor(item)
-
-	mui.Column(c).Width(125).Height(125).Radius(12).
-		Background(tk.BgElevated).Border(1, tk.BorderSecondary).
-		OnClick(func() {
+	return mediagrid.Item{
+		Key:           fmt.Sprintf("recent-media-%d", item.ID),
+		Label:         "card " + name,
+		Name:          name,
+		SizeLabel:     formatBytes(uint64(item.FileSize)),
+		DurationLabel: duration,
+		Bitmap:        s.bitmapFor(item),
+		Menu: []overlay.MenuItem{
+			{Key: "open", Label: "Open in Viewer", Icon: lucide.Image()},
+			{Key: "library", Label: "Go to Library", Icon: lucide.Library()},
+		},
+		OnClick: func(mui.Modifiers) {
 			s.actions.OpenViewer(item, allItems)
-		}).Children(func() {
-		// Image thumbnail container
-		mui.Box(c).Grow(1).Center().Children(func() {
-			if bitmap != nil {
-				display.Image(c, bitmap, display.ImageProps{
-					Width:   123,
-					Height:  95,
-					Variant: display.ImageFilled,
-				})
-			} else {
-				mui.Icon(c, lucide.Image()).FontSize(28).TextColor(tk.TextTertiary)
+		},
+		OnContext: func(key string) {
+			switch key {
+			case "open":
+				s.actions.OpenViewer(item, allItems)
+			case "library":
+				s.actions.NavigateToMedia()
 			}
-		})
+		},
+	}
+}
 
-		// Bottom tag pill with filename/folder
-		mui.Row(c).Height(26).Padding(0, 6).AlignItems(mui.Center).
-			Background(tk.BgContainer).Children(func() {
-			name := filepath.Base(item.CurrentRelativePath)
-			mui.Icon(c, lucide.Folder()).FontSize(11).TextColor(tk.Success)
-			mui.Box(c).Width(4)
-			mui.Text(c, name).FontSize(10).FontWeight(600).
-				TextColor(tk.TextSecondary).SingleLine().Grow(1)
-		})
-	})
+func formatMediaDuration(seconds int) string {
+	if seconds < 60 {
+		return fmt.Sprintf("0:%02d", seconds)
+	}
+	return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
 }
 
 func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
@@ -130,6 +135,11 @@ func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
 	s.mu.Unlock()
 
 	go func(hash string, media domain.MediaItem) {
+		defer func() {
+			s.mu.Lock()
+			delete(s.pendingBitmaps, hash)
+			s.mu.Unlock()
+		}()
 		data, err := thumbs.Get(context.Background(), media)
 		if err == nil && len(data) > 0 {
 			if bmp, decErr := mui.DecodeBitmap(data); decErr == nil {

@@ -8,6 +8,7 @@ import (
 
 	mui "github.com/egoist/mygo/ui"
 
+	"painless/internal/fileops"
 	"painless/internal/scanner"
 )
 
@@ -112,7 +113,7 @@ func TestAlbumFolderCardRescanAndPicker(t *testing.T) {
 		t.Fatalf("album folder = %q, want %q", got, chosen)
 	}
 	if len(scans) != 1 || scans[0].TargetDir != chosen || scans[0].DriveRoot != root {
-		t.Fatalf("scan after choosing folder = %+v", scans)
+		t.Fatalf("scan after choosing folder = %+v (closed=%v scanning=%v executing=%v factory=%v err=%q)", scans, screen.closed, screen.isScanning, screen.isExecuting, screen.albumScannerFactory != nil, screen.lastScanErr)
 	}
 	for screen.IsScanning() {
 		applyUpdate()
@@ -130,6 +131,27 @@ func TestAlbumFolderCardRescanAndPicker(t *testing.T) {
 	}
 	if got := screen.TargetPath(); got != root {
 		t.Fatalf("discovery path changed to %q", got)
+	}
+}
+
+func TestScaffoldBannerTracksRealFolders(t *testing.T) {
+	root := t.TempDir()
+	screen := New(Options{DriveRoot: root})
+	tt := mui.NewTester(screen.View, 1000, 800)
+	if !tt.HasText("Missing library folders") {
+		t.Fatalf("expected a missing-folder banner, got %q", tt.Texts())
+	}
+
+	// Existing managed folders and the album source must silence the banner.
+	if err := fileops.ScaffoldLibrary(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "media", "albums"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if tt.HasText("Missing library folders") {
+		t.Fatalf("banner still shown for existing folders: %q", tt.Texts())
 	}
 }
 

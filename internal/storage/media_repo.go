@@ -193,6 +193,15 @@ func (r *MediaRepo) GetByHash(ctx context.Context, fileHash string) (*domain.Med
 	return item, nil
 }
 
+// Count returns the exact number of indexed media items in this library.
+func (r *MediaRepo) Count(ctx context.Context) (int64, error) {
+	var total int64
+	if err := r.db.Raw().QueryRowContext(ctx, "SELECT COUNT(*) FROM media_items").Scan(&total); err != nil {
+		return 0, fmt.Errorf("failed to count media items: %w", err)
+	}
+	return total, nil
+}
+
 // List queries paginated media items according to filtering and sorting parameters.
 func (r *MediaRepo) List(ctx context.Context, params domain.MediaListParams) (*domain.MediaListPage, error) {
 	var whereClauses []string

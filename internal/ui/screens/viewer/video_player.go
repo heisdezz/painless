@@ -6,6 +6,7 @@ import (
 	"time"
 
 	mui "github.com/egoist/mygo/ui"
+	uivideo "github.com/egoist/mygo/ui/video"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/choice"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -24,7 +25,9 @@ func (s *Screen) renderVideoPlayer(c *mui.Context, tk *lobetheme.Tokens, item *d
 	mui.Column(c).Grow(1).Basis(0).Children(func() {
 		mui.Box(c).Grow(1).Basis(0).Center().Children(func() {
 			if s.videoPlayer != nil {
-				mui.Video(c, s.videoPlayer)
+				// Contain keeps the player's aspect ratio while filling the
+				// stage; the system engine decodes at the source ratio.
+				mui.Video(c, s.videoPlayer).Fill().Fit(mui.Contain)
 			} else {
 				mui.Text(c, "No video preview available").
 					FontSize(13).TextColor(tk.TextTertiary)
@@ -43,8 +46,8 @@ func (s *Screen) ensureVideoInitialized(item *domain.MediaItem) {
 	}
 
 	s.stopVideoLocked()
-
 	s.videoHash = item.FileHash
+
 	var fullPath string
 	if s.driveRoot != "" {
 		fullPath = filepath.Join(s.driveRoot, item.CurrentRelativePath)
@@ -52,27 +55,11 @@ func (s *Screen) ensureVideoInitialized(item *domain.MediaItem) {
 		fullPath = item.CurrentRelativePath
 	}
 
-	var dur time.Duration
-	if item.DurationSeconds != nil {
-		dur = time.Duration(*item.DurationSeconds) * time.Second
+	player, err := uivideo.Open(fullPath)
+	if err != nil {
+		return
 	}
-
-	cfg := FFmpegDecoderConfig{
-		FilePath: fullPath,
-		Width:    640,
-		Height:   360,
-		FPS:      30,
-		Duration: dur,
-	}
-
-	decoder, err := NewFFmpegDecoder(cfg)
-	if err == nil {
-		s.videoDecoder = decoder
-		player, err := mui.NewVideoPlayer(decoder)
-		if err == nil {
-			s.videoPlayer = player
-		}
-	}
+	s.videoPlayer = player
 }
 
 func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *domain.MediaItem) {
@@ -90,12 +77,12 @@ func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *do
 			playTitle = "Pause"
 		}
 
-		if action.ActionIcon(c, playIcon, action.ActionIconProps{
+		action.ActionIcon(c, playIcon, action.ActionIconProps{
 			Size:  lobetheme.Middle,
 			Title: playTitle,
-		}).Clicked() {
+		}).TextColor(tk.TextTertiary).OnClick(func() {
 			s.togglePlayPause()
-		}
+		})
 
 		// Current Position and Duration
 		var curPos, totalDur float64
@@ -108,14 +95,31 @@ func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *do
 		}
 
 		mui.Text(c, formatSeconds(curPos)+" / "+formatSeconds(totalDur)).
-			FontSize(12).TextColor(tk.TextSecondary).Shrink(0).SingleLine()
+			FontSize(12).TextColor(tk.TextTertiary).Shrink(0).SingleLine()
 
-		// Scrubber slider
+		// Scrubber slider. While dragged, the slider keeps its own value; the
+		// player seeks as the value settles instead of on every pixel.
 		sliderPos := curPos
-		if choice.Slider(c, &sliderPos, choice.SliderProps{
+		if !s.seekAt.IsZero() && time.Since(s.seekAt) < time.Second {
+			sliderPos = s.seekPos
+		}
+		slider := choice.Slider(c, &sliderPos, choice.SliderProps{
 			Min: 0,
 			Max: totalDur,
-		}).Grow(1).Changed() {
+		}).Grow(1)
+		pressed := slider.Pressed()
+		if pressed {
+			s.scrubbing = true
+		}
+		if slider.Changed() {
+			s.seekPos, s.seekAt = sliderPos, time.Now()
+			if !s.scrubbing && s.videoPlayer != nil {
+				s.videoPlayer.Seek(time.Duration(sliderPos * float64(time.Second)))
+			}
+		}
+		if s.scrubbing && !pressed {
+			s.scrubbing = false
+			s.seekPos, s.seekAt = sliderPos, time.Now()
 			if s.videoPlayer != nil {
 				s.videoPlayer.Seek(time.Duration(sliderPos * float64(time.Second)))
 			}
@@ -134,21 +138,21 @@ func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *do
 			muteTitle = "Unmute"
 		}
 
-		if action.ActionIcon(c, muteIcon, action.ActionIconProps{
-			Size:  lobetheme.Small,
+		action.ActionIcon(c, muteIcon, action.ActionIconProps{
+			Size:  lobetheme.Middle,
 			Title: muteTitle,
-		}).Clicked() {
+		}).TextColor(tk.TextTertiary).OnClick(func() {
 			if s.videoPlayer != nil {
 				s.videoPlayer.SetMuted(!isMuted)
 				s.requestRedraw()
 			}
-		}
+		})
 	})
 }
 
 func (s *Screen) togglePlayPause() {
 	if s.videoPlayer == nil {
-		// If video player isn't active (e.g. test or no ffmpeg), still toggle throttler for testing
+		// If video player isn't active (e.g. test or unsupported), still toggle throttler for testing
 		s.mu.Lock()
 		if s.throttler != nil {
 			s.throttler.Pause()
@@ -183,10 +187,6 @@ func (s *Screen) stopVideoLocked() {
 		s.videoPlayer.Pause()
 		s.videoPlayer.Close()
 		s.videoPlayer = nil
-	}
-	if s.videoDecoder != nil {
-		_ = s.videoDecoder.Close()
-		s.videoDecoder = nil
 	}
 	s.videoHash = ""
 

@@ -171,7 +171,15 @@ func TestLibraryLoadsAlbumFolder(t *testing.T) {
 			}
 		}
 	}
+	if tt.HasText("inside.png") || tt.HasText("outside.png") {
+		t.Fatalf("catalog before an explicit scan = %q", tt.Texts())
+	}
+
+	// Opening a drive no longer scans on its own; the album folder is indexed
+	// only when the user asks for it.
+	shell.Discover().RescanAlbumFolder()
 	waitForRefresh()
+	tt.Frame()
 	if !tt.HasText("inside.png") || tt.HasText("outside.png") || shell.Discover().StagedCount() != 0 {
 		t.Fatalf("catalog after loading the default folder = %q; staged = %d", tt.Texts(), shell.Discover().StagedCount())
 	}

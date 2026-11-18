@@ -2,10 +2,11 @@ package shell
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/fileops"
 	"painless/internal/scanner"
 	"painless/internal/state"
 	"painless/internal/storage"
@@ -115,7 +116,19 @@ func (l *libraryController) HandleEvent(event state.Event) {
 // empty catalog source so the library shows its empty state.
 func (l *libraryController) sync() {
 	drive, ok := l.store.State.ActiveDrive()
-	if ok && drive.ID == l.drive && drive.Path == l.root && l.db != nil {
+	libraryRoot, albumFolder := "", ""
+	if ok {
+		libraryRoot = loadLibraryRoot(drive.Path)
+		if libraryRoot == "" {
+			// Existing libraries keep their database at the drive root; the
+			// album folder only becomes the library root once chosen.
+			libraryRoot = drive.Path
+			albumFolder = filepath.Join(drive.Path, "media", "albums")
+		} else {
+			albumFolder = libraryRoot
+		}
+	}
+	if ok && drive.ID == l.drive && libraryRoot == l.root && l.db != nil {
 		return
 	}
 	l.Close()
@@ -123,17 +136,28 @@ func (l *libraryController) sync() {
 		return
 	}
 
-	db, err := storage.Open(drive.Path, storage.OpenOptions{})
+	db, err := storage.Open(libraryRoot, storage.OpenOptions{})
 	if err != nil {
 		l.shell.toaster.Error("Could not open library", err.Error())
 		return
 	}
 	thumbs := thumbnail.New(thumbnail.Options{DriveRoot: drive.Path})
 	mediaRepo, albumRepo := storage.NewMediaRepo(db), storage.NewAlbumRepo(db)
-	l.db, l.thumbs, l.drive, l.root = db, thumbs, drive.ID, drive.Path
+	l.db, l.thumbs, l.drive, l.root = db, thumbs, drive.ID, libraryRoot
+
+	// Create the managed folders up front so the Discover scaffold banner only
+	// reports genuinely absent folders instead of ones consolidation creates later.
+	if !db.IsReadOnly() {
+		if err := fileops.ScaffoldLibrary(drive.Path); err != nil {
+			l.shell.toaster.Error("Could not prepare library folders", err.Error())
+		}
+	}
 
 	opts := discover.Options{Store: l.store, DriveRoot: drive.Path, Update: l.update,
-		AlbumSource: albumRepo, MediaStore: mediaRepo, AlbumStore: albumRepo}
+		AlbumSource: albumRepo, MediaStore: mediaRepo, AlbumStore: albumRepo,
+		AlbumFolder:          albumFolder,
+		OnAlbumFolderChanged: func(path string) { l.selectLibraryRoot(drive.Path, path) },
+	}
 	opts.CatalogCount = cachedMediaCount(mediaRepo)
 	var screen *discover.Screen
 	if !db.IsReadOnly() {
@@ -154,11 +178,21 @@ func (l *libraryController) sync() {
 		Albums: albumRepository{albumRepo}, Media: mediaRepo, Thumbs: thumbs,
 		DriveRoot: drive.Path, ReadOnly: db.IsReadOnly(),
 	}))
-	if opts.AlbumScannerFactory != nil {
-		if info, err := os.Stat(screen.AlbumFolder()); err == nil && info.IsDir() {
-			screen.RescanAlbumFolder()
-		}
+}
+
+// selectLibraryRoot persists the folder chosen in Discover and reopens every
+// screen against its catalog. Media paths stay relative to the drive mount.
+func (l *libraryController) selectLibraryRoot(driveRoot, path string) {
+	if !isWithinDrive(driveRoot, path) {
+		l.shell.toaster.Error("Invalid library folder", "Choose a folder inside the active drive.")
+		return
 	}
+	if err := saveLibraryRoot(driveRoot, path); err != nil {
+		l.shell.toaster.Error("Could not save library folder", err.Error())
+		return
+	}
+	l.drive = "" // force sync to reopen at the new location
+	l.sync()
 }
 
 // Close detaches the old screens immediately, then releases the database
@@ -194,11 +228,11 @@ func cachedMediaCount(media *storage.MediaRepo) func() int {
 		if time.Since(queried) < 500*time.Millisecond {
 			return total
 		}
-		page, err := media.List(context.Background(), domain.MediaListParams{Limit: 1})
+		count, err := media.Count(context.Background())
 		if err != nil {
 			return total
 		}
-		queried, total = time.Now(), page.Total
+		queried, total = time.Now(), int(count)
 		return total
 	}
 }

@@ -37,14 +37,16 @@ func (s *Screen) gdriveTab(c *mui.Context) {
 
 	mui.Column(c).Fill().Gap(12).Children(func() {
 		card(c, "Service account", func() {
-			mui.Text(c, "Credentials JSON").FontSize(12).TextColor(tk.TextSecondary)
+			mui.Text(c, "Credentials JSON").FontSize(tk.FontSizeSM - 1).FontWeight(600).
+				LetterSpacing(0.5).TextColor(tk.TextTertiary)
 			field.TextArea(c, &s.credentialsDraft, field.TextAreaProps{
 				Placeholder: "Paste the service-account JSON key here",
 				MinRows:     5,
 				MaxRows:     10,
 			})
 
-			mui.Text(c, "Destination folder ID").FontSize(12).TextColor(tk.TextSecondary)
+			mui.Text(c, "Destination folder ID").FontSize(tk.FontSizeSM - 1).FontWeight(600).
+				LetterSpacing(0.5).TextColor(tk.TextTertiary)
 			field.Input(c, &s.folderDraft, field.InputProps{
 				Placeholder: "Google Drive folder ID",
 			})

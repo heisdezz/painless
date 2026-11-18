@@ -51,7 +51,8 @@ func (s *Screen) healthCard(c *mui.Context, tk *lobetheme.Tokens) {
 		fieldRow(c, "Size", formatBytes(s.backups.DBSizeBytes()))
 
 		mui.Row(c).Shrink(0).Gap(12).AlignItems(mui.Center).Children(func() {
-			mui.Text(c, "Integrity").FontSize(12).TextColor(tk.TextSecondary).Width(110).Shrink(0)
+			mui.Text(c, "Integrity").FontSize(tk.FontSizeSM - 1).TextColor(tk.TextTertiary).
+				Width(120).Shrink(0)
 			switch {
 			case s.integrity == "":
 				display.Tag(c, "Not verified", display.TagProps{Color: display.TagGray, Size: lobetheme.Small})

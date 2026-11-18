@@ -19,7 +19,7 @@ func TestDashboardIsDefaultScreen(t *testing.T) {
 		t.Fatalf("default screen = %q, want dashboard", store.State.Screen())
 	}
 	tt := mui.NewTester(shell.View, 1200, 800)
-	if !tt.HasText("Dashboard") && !tt.HasText("Select a drive") && !tt.HasText("No drive selected") {
+	if !tt.HasText("SELECT A CONNECTED DRIVE") && !tt.HasText("No Drives Connected") {
 		t.Fatalf("dashboard picker not rendered: %q", tt.Texts())
 	}
 }

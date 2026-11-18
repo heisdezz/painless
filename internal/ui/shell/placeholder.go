@@ -72,12 +72,18 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 	}
 	info := screenInfos()[screen]
 	mui.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
-		mui.Column(c).Shrink(0).Padding(24, 28, 12).Gap(4).Children(func() {
-			mui.Text(c, info.title).FontSize(22).FontWeight(600)
-			mui.Text(c, info.description).FontSize(13).TextColor(tk.TextSecondary)
-		})
-		// The dashboard and viewer paint their own headers, so they take the
+		if screen != state.ScreenAlbums && screen != state.ScreenDashboard && screen != state.ScreenViewer {
+			mui.Column(c).Shrink(0).Padding(24, 28, 12).Gap(4).Children(func() {
+				mui.Text(c, info.title).FontSize(22).FontWeight(600)
+				mui.Text(c, info.description).FontSize(13).TextColor(tk.TextSecondary)
+			})
+		}
+		// These screens paint their own headers (or none), so they take the
 		// whole content area without the generic screen heading.
+		if screen == state.ScreenAlbums && s.albums != nil {
+			mui.Column(c).Grow(1).Basis(0).Children(func() { s.albums.View(c) })
+			return
+		}
 		if screen == state.ScreenDashboard && s.dashboard != nil {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.dashboard.View(c) })
 			return
@@ -88,10 +94,6 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 		}
 		if screen == state.ScreenCatalog && s.catalog != nil {
 			mui.Column(c).Grow(1).Basis(0).Children(func() { s.catalog.View(c) })
-			return
-		}
-		if screen == state.ScreenAlbums && s.albums != nil {
-			mui.Column(c).Grow(1).Basis(0).Children(func() { s.albums.View(c) })
 			return
 		}
 		if screen == state.ScreenDiscover && s.discover != nil {

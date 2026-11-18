@@ -25,7 +25,7 @@ func TestShellNavigation(t *testing.T) {
 	if store.State.Screen() != state.ScreenAlbums {
 		t.Fatalf("screen after clicking Albums = %q", store.State.Screen())
 	}
-	if !tt.HasText("Albums") || !tt.HasText("Group media into albums") {
+	if !tt.HasText("No albums yet") || !tt.HasText("New Album") {
 		t.Fatalf("texts after navigation = %q", tt.Texts())
 	}
 

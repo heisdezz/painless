@@ -24,22 +24,22 @@ func (s *Screen) infoRail(c *mui.Context, tk *lobetheme.Tokens, item domain.Medi
 	}
 
 	mui.Column(c).Width(infoRailWidth).Shrink(0).AlignSelf(mui.Stretch).
-		Background(tk.BgLayout).Border(1, tk.BorderSecondary).Children(func() {
+		Background(tk.BgBase).Border(1, tk.BorderSecondary).Children(func() {
 		mui.Scroll(c).Fill().Children(func() {
-			mui.Column(c).Fill().Padding(16, 16, 24).Children(func() {
-				mui.Text(c, "Media Details & EXIF").
-					FontSize(11).FontWeight(600).TextColor(tk.TextTertiary).LetterSpacing(0.5)
-				mui.Row(c).Padding(6, 0, 14).AlignItems(mui.Center).Gap(8).Children(func() {
+			// A fixed inner width keeps long values wrapping inside the rail
+			// instead of running against its edges.
+			mui.Column(c).Width(infoRailWidth-2).Padding(16, 16, 24).Children(func() {
+				mui.Row(c).AlignItems(mui.Center).Gap(8).Padding(0, 0, 14).Children(func() {
 					display.Tag(c, formatTag(item), display.TagProps{
 						Size:  lobetheme.Small,
 						Color: display.TagBlue,
 					})
 					mui.Text(c, formatBytes(uint64(item.FileSize))).
-						FontSize(12).TextColor(tk.TextSecondary).SingleLine()
+						FontSize(12).TextColor(tk.TextTertiary).SingleLine().MinWidth(0)
 				})
 
-				railSection(c, tk, "File Attributes", func() {
-					kvRow(c, tk, "Filename", filepath.Base(item.CurrentRelativePath))
+				railSection(c, tk, "FILE ATTRIBUTES", true, func() {
+					kvBlock(c, tk, "Filename", filepath.Base(item.CurrentRelativePath), false)
 					kvRow(c, tk, "File Size", formatBytes(uint64(item.FileSize)))
 					kvRow(c, tk, "MIME Type", item.MimeType)
 					if !item.CreatedAt.IsZero() {
@@ -55,9 +55,7 @@ func (s *Screen) infoRail(c *mui.Context, tk *lobetheme.Tokens, item domain.Medi
 					kvBlock(c, tk, "SHA-256", item.FileHash, true)
 				})
 
-				layout.Divider(c, layout.DividerProps{})
-
-				railSection(c, tk, "Dimensions & Format", func() {
+				railSection(c, tk, "DIMENSIONS & FORMAT", true, func() {
 					if meta != nil && meta.Width > 0 && meta.Height > 0 {
 						gcd := calculateGCD(meta.Width, meta.Height)
 						kvRow(c, tk, "Resolution", fmt.Sprintf("%d × %d", meta.Width, meta.Height))
@@ -79,15 +77,11 @@ func (s *Screen) infoRail(c *mui.Context, tk *lobetheme.Tokens, item domain.Medi
 					}
 				})
 
-				layout.Divider(c, layout.DividerProps{})
-
-				railSection(c, tk, "EXIF Camera Details", func() {
+				railSection(c, tk, "EXIF CAMERA DETAILS", true, func() {
 					s.renderCameraDetails(c, tk, meta)
 				})
 
-				layout.Divider(c, layout.DividerProps{})
-
-				railSection(c, tk, "GPS Location", func() {
+				railSection(c, tk, "GPS LOCATION", true, func() {
 					s.renderGPS(c, tk, meta)
 				})
 			})
@@ -95,11 +89,14 @@ func (s *Screen) infoRail(c *mui.Context, tk *lobetheme.Tokens, item domain.Medi
 	})
 }
 
-// railSection renders one inspector group: a micro heading over a tight
-// column of rows, separated from its neighbors by hairline dividers.
-func railSection(c *mui.Context, tk *lobetheme.Tokens, title string, body func()) {
-	mui.Column(c).Gap(8).Padding(0, 0, 14).Children(func() {
-		mui.Text(c, title).FontSize(11).FontWeight(600).TextColor(tk.TextTertiary)
+// railSection renders one inspector group: an uppercase micro heading over a
+// tight column of rows, divided from its neighbour by a hairline.
+func railSection(c *mui.Context, tk *lobetheme.Tokens, title string, divider bool, body func()) {
+	if divider {
+		layout.Divider(c, layout.DividerProps{})
+	}
+	mui.Column(c).Gap(8).Padding(14, 0).Children(func() {
+		mui.Text(c, title).FontSize(10).FontWeight(800).TextColor(tk.TextTertiary).LetterSpacing(1)
 		body()
 	})
 }
@@ -110,22 +107,22 @@ func kvRow(c *mui.Context, tk *lobetheme.Tokens, key, val string) {
 		val = "—"
 	}
 	mui.Row(c).AlignItems(mui.Center).Gap(12).Children(func() {
-		mui.Text(c, key).FontSize(12).TextColor(tk.TextSecondary).Shrink(0)
-		mui.Text(c, val).FontSize(12).TextColor(tk.Text).Grow(1).
+		mui.Text(c, key).FontSize(11).TextColor(tk.TextTertiary).Shrink(0)
+		mui.Text(c, val).FontSize(12).TextColor(tk.Text).Grow(1).MinWidth(0).
 			SingleLine().TextAlign(mui.End)
 	})
 }
 
 // kvBlock stacks a long value under its label so paths and hashes wrap
-// instead of truncating.
+// instead of clipping at the rail edge.
 func kvBlock(c *mui.Context, tk *lobetheme.Tokens, key, val string, allowCopy bool) {
 	if val == "" {
 		return
 	}
 	mui.Column(c).Gap(2).Children(func() {
-		mui.Text(c, key).FontSize(12).TextColor(tk.TextSecondary).SingleLine()
-		mui.Row(c).AlignItems(mui.Center).Gap(6).Children(func() {
-			mui.Text(c, val).FontSize(12).TextColor(tk.Text).Grow(1)
+		mui.Text(c, key).FontSize(11).TextColor(tk.TextTertiary).SingleLine()
+		mui.Row(c).AlignItems(mui.Start).Gap(6).Children(func() {
+			mui.Text(c, val).FontSize(12).TextColor(tk.Text).Grow(1).MinWidth(0).Wrap()
 			if allowCopy {
 				action.CopyButton(c, val, action.CopyButtonProps{Size: lobetheme.Small})
 			}
@@ -159,7 +156,7 @@ func (s *Screen) renderCameraDetails(c *mui.Context, tk *lobetheme.Tokens, meta 
 		kvRow(c, tk, "Model", meta.CameraModel)
 	}
 	if meta.LensModel != "" {
-		kvRow(c, tk, "Lens", meta.LensModel)
+		kvBlock(c, tk, "Lens", meta.LensModel, false)
 	}
 	if meta.Aperture > 0 {
 		kvRow(c, tk, "Aperture", fmt.Sprintf("f/%.1f", meta.Aperture))
@@ -196,7 +193,8 @@ func (s *Screen) renderGPS(c *mui.Context, tk *lobetheme.Tokens, meta *domain.Me
 
 	coordsStr := latStr + ", " + lonStr
 	mui.Row(c).Padding(2, 0, 0).AlignItems(mui.Center).Gap(8).Children(func() {
-		mui.Text(c, coordsStr).FontSize(12).FontWeight(500).TextColor(tk.Text).Grow(1).SingleLine()
+		mui.Text(c, coordsStr).FontSize(12).FontWeight(500).TextColor(tk.Text).
+			Grow(1).MinWidth(0).Wrap()
 		action.CopyButton(c, coordsStr, action.CopyButtonProps{Size: lobetheme.Small})
 	})
 }
