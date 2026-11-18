@@ -116,7 +116,7 @@ func (s *Screen) startRestore(path string, c *mui.Context) {
 			return
 		}
 		s.raise(domain.LogLevelInfo, "Backup restored",
-			"Restart the app to reopen the restored library.")
+			"The library has been reopened with the restored backup.")
 		services.Invalidate()
 	}()
 }

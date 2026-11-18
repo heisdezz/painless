@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"painless/internal/domain"
 	"painless/internal/state"
@@ -83,7 +84,18 @@ func TestBackupsCreateListIntegrity(t *testing.T) {
 func TestBackupsRestoreRecoversMarker(t *testing.T) {
 	root := t.TempDir()
 	db := seedLibrary(t, root)
-	b := NewBackups(newDriveStore(t, root))
+	store := newDriveStore(t, root)
+	b := NewBackups(store)
+
+	events := make(chan state.Event, 4)
+	sub := store.Bus.Subscribe(4)
+	defer sub.Cancel()
+	go func() {
+		for e := range sub.C {
+			events <- e
+		}
+		close(events)
+	}()
 
 	backupPath, err := b.CreateBackup()
 	if err != nil {
@@ -100,6 +112,15 @@ func TestBackupsRestoreRecoversMarker(t *testing.T) {
 
 	if err := b.RestoreBackup(backupPath); err != nil {
 		t.Fatalf("RestoreBackup: %v", err)
+	}
+
+	select {
+	case e := <-events:
+		if e.Kind != state.EventLibraryRestored {
+			t.Fatalf("event kind = %q, want library_restored", e.Kind)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("EventLibraryRestored was not published after restore")
 	}
 
 	restored := seedLibraryNoMarker(t, root)

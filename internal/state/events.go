@@ -16,11 +16,14 @@ const (
 	EventScreenChanged     EventKind = "screen_changed"
 	EventSelectionChanged  EventKind = "selection_changed"
 	EventMediaChanged      EventKind = "media_changed"
-	EventStagingChanged    EventKind = "staging_changed"
-	EventJobStarted        EventKind = "job_started"
-	EventJobProgress       EventKind = "job_progress"
-	EventJobFinished       EventKind = "job_finished"
-	EventToast             EventKind = "toast"
+	// EventLibraryRestored is published after a backup snapshot replaces the
+	// active drive's database file; live connections must be reopened.
+	EventLibraryRestored EventKind = "library_restored"
+	EventStagingChanged  EventKind = "staging_changed"
+	EventJobStarted      EventKind = "job_started"
+	EventJobProgress     EventKind = "job_progress"
+	EventJobFinished     EventKind = "job_finished"
+	EventToast           EventKind = "toast"
 )
 
 // Toast is a transient notification payload for feedback.Toast.

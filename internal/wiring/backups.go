@@ -150,6 +150,10 @@ func (b *Backups) RestoreBackup(path string) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("replace database: %w", err)
 	}
+	// The live library connection now points at the replaced file's old
+	// inode; tell the shell to reopen it. Event delivery is async and the
+	// restored pages are already durable at this point.
+	b.store.Bus.Publish(state.Event{Kind: state.EventLibraryRestored})
 	return nil
 }
 

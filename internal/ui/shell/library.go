@@ -93,6 +93,11 @@ func (l *libraryController) HandleEvent(event state.Event) {
 	switch event.Kind {
 	case state.EventDrivesChanged, state.EventActiveDriveChange:
 		l.sync()
+	case state.EventLibraryRestored:
+		// A backup snapshot replaced the database file; force sync to
+		// reopen it even though the active drive did not change.
+		l.drive = ""
+		l.sync()
 	case state.EventMediaChanged:
 		if c := l.shell.Catalog(); c != nil {
 			c.Reload()

@@ -440,6 +440,17 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
   - 2026-11-17T23:49:31Z: Claimed by zed-agent (GLM). Follow-up explicitly deferred by agent-b in UI-DISCOVER-ADVANCED; the hook already exists on discover.Options, only the shell wiring is missing.
   - 2026-11-17T23:54:33Z: Done. libraryController.sync now sets `opts.CatalogCount` via a new `cachedMediaCount(mediaRepo)` helper: a 500ms-TTL cached `MediaRepo.List{Limit:1}.Total` so the per-frame Scanner Status panel does not query SQLite on every render (errors keep the last value). New drive rebuilds the closure; tests in `discover_count_test.go` assert the rendered 'SQLite Cataloged' value and the cache helper. Verified: shell tests + `-race` + `go tool mygo vet .` + gofmt green; full suite green except `TestCatalogSelectionAndBatchAction` in internal/ui/screens/catalog, which another agent is actively editing (uncommitted catalog_view/filter_bar/media_card changes) - not related to this change.
 
+#### SYS-RESTORE-REOPEN: Reopen Live Library After Backup Restore
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-18T08:09:59Z
+- Depends on: SYS-SETTINGS-CONTROLLERS, SYS-LIBRARY-WIRING
+- Allowed paths/scope: `internal/state/events.go` (one event kind), `internal/wiring/backups.go`, `internal/ui/shell/library.go` (additive), `internal/ui/screens/settings/backup_tab.go` (toast text)
+- Acceptance: after a successful RestoreBackup the shell's live library connection is reopened against the restored database file without an app restart; wired by a new `EventLibraryRestored` published by the backup controller; tests + full suite + race green.
+- Notes:
+  - 2026-11-18T08:09:59Z: Done by zed-agent (GLM). Resolves the stale-WAL-pages limitation documented in SYS-SETTINGS-CONTROLLERS (a live connection kept reading the replaced file's old inode). `state`: added `EventLibraryRestored`. `wiring.Backups.RestoreBackup` publishes it after the atomic rename. `libraryController.HandleEvent` forces a reopen by clearing the cached drive ID and re-syncing (bridge delivers events on the UI thread, so no new locking). Settings restore toast no longer asks for an app restart. `TestBackupsRestoreRecoversMarker` now asserts the event is published. Verified: full suite, `-race` on state/wiring/shell/settings, `go tool mygo vet .` on wiring/settings, gofmt clean.
+
 ---
 
 ## 4. Activity Log
@@ -501,3 +512,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T23:48:49Z [zed-agent (GLM)] UI-DISCOVER-ADVANCED: Verified agent-b's review-state work (full suite, race -count=3 on discover/scanner, mygo vet) and committed it as 515a5e4 / 19b08f5 / c4f18ad; task marked done. Remaining known follow-up: feed discover.CatalogCount from libraryController.
 - 2026-11-17T23:49:31Z [zed-agent (GLM)] SYS-DISCOVER-CATALOG-COUNT: Created and claimed (in_progress); feeding the discover CatalogCount hook from libraryController with a TTL-cached media count.
 - 2026-11-17T23:54:33Z [zed-agent (GLM)] SYS-DISCOVER-CATALOG-COUNT: Done. Discover Scanner Status panel now shows the live SQLite cataloged total via a 500ms-TTL cached count wired from libraryController. Heads-up to the agent editing internal/ui/screens/catalog: TestCatalogSelectionAndBatchAction currently fails on your in-flight uncommitted changes (click-to-select).
+- 2026-11-18T08:09:59Z [zed-agent (GLM)] SYS-RESTORE-REOPEN: Done. Backup restore now publishes EventLibraryRestored and the shell reopens the live library connection immediately - no app restart needed after restoring a backup.
