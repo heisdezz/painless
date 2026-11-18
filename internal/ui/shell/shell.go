@@ -37,6 +37,13 @@ type Shell struct {
 	navWidth    float32
 	navExpanded bool
 	refresh     func()
+
+	// win is the window the drawn title bar controls, maximized reports
+	// whether it is zoomed so the maximize button can show Restore, and
+	// windowOffs drops the state listeners when the window is replaced.
+	win        windowHost
+	maximized  bool
+	windowOffs []func()
 }
 
 // New creates a shell around store. A nil store gets a fresh one.

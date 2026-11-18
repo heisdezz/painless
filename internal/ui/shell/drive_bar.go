@@ -9,7 +9,15 @@ import (
 )
 
 func (s *Shell) topBar(c *mui.Context, tk *lobetheme.Tokens) {
-	mui.Row(c).Shrink(0).Padding(12, 16).Gap(12).AlignItems(mui.Center).Children(func() {
+	// The window hides its title bar and its window buttons, so this row is
+	// the title bar: it drags the window, a double click on it zooms, and
+	// the controls sit at its right end. c.TitleBar() is zero then; its
+	// insets are kept so a platform that still reports a system band
+	// leaves the view clear of it.
+	bar := c.TitleBar()
+	mui.Row(c).Height(max(titleBarHeight, bar.Height)).Shrink(0).
+		Padding(0, bar.Right+16, 0, bar.Left+16).Gap(12).AlignItems(mui.Center).
+		DragWindow().Children(func() {
 		mui.Icon(c, lucide.HardDrive()).FontSize(20).TextColor(tk.Primary)
 		mui.Text(c, "painless").FontSize(18).FontWeight(600)
 		mui.Box(c).Grow(1)
@@ -21,6 +29,44 @@ func (s *Shell) topBar(c *mui.Context, tk *lobetheme.Tokens) {
 		})
 		if refresh.Clicked() && s.refresh != nil {
 			s.refresh()
+		}
+		s.windowControls(c)
+	})
+}
+
+// windowControls draws the minimize, maximize and close buttons the view
+// takes over from the system, as bare quiet icons: instrument-panel
+// restraint, no boxed chrome. The maximize button is marked so Windows 11
+// shows its snap layouts over it as it would over its own.
+func (s *Shell) windowControls(c *mui.Context) {
+	if s.win == nil {
+		return
+	}
+	mui.Row(c).Gap(4).AlignItems(mui.Center).Children(func() {
+		if action.ActionIcon(c, lucide.Minus(), action.ActionIconProps{
+			Size:  lobetheme.Small,
+			Title: "Minimize",
+		}).Clicked() {
+			s.win.Minimize()
+		}
+
+		icon, title := lucide.Square(), "Maximize"
+		if s.maximized {
+			icon, title = lucide.Copy(), "Restore"
+		}
+		maximize := action.ActionIcon(c, icon, action.ActionIconProps{
+			Size:  lobetheme.Small,
+			Title: title,
+		}).MaximizeButton()
+		if maximize.Clicked() {
+			s.win.ToggleMaximize()
+		}
+
+		if action.ActionIcon(c, lucide.X(), action.ActionIconProps{
+			Size:  lobetheme.Small,
+			Title: "Close",
+		}).Clicked() {
+			s.win.Close()
 		}
 	})
 }

@@ -12,6 +12,7 @@ The Application Shell is the root container of Painless built on MyGo (`github.c
    - Initial size: 1200 x 800.
    - Minimum size: 800 x 600.
    - Pinned state: `StateKey: "painless_main_window"` (remembers geometry across launches).
+   - Custom decoration: the view is the window's decoration. On Linux the window is `Frameless` (a hidden title bar would keep the compositor's own title bar where the compositor decorates windows itself, as KWin does); on Windows and macOS it uses `TitleBarStyle: mygo.TitleBarHidden` with `HideWindowButtons: true`, which keeps the shadow, corners and resizable top edge. Either way the shell's top bar is the title bar — a 52px row marked `DragWindow()` (double click zooms) that ends in the drawn minimize / maximize / close controls (`shell.windowControls`, marked `MaximizeButton()` for Windows 11 snap layouts).
 2. **Lobe Theme Tokens**:
    - Use `github.com/lobehub/lobe-mygo/pkg/theme` for surface colors, border strokes, and typography.
    - Consistent dark/light adaptation with GPU-drawn components.
