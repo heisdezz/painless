@@ -474,6 +474,17 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
   - 2026-11-18T09:00:18Z: Claimed by zed-agent (GLM). Gap found in the follow-up sweep after the registry emptied: `albums.Screen` stores `Thumbs` but never uses it (member cards render a static placeholder icon), and no path leads from an album member to the viewer. Plan: mirror catalog's async `bitmapFor` cache in albums, add `Options.OnOpenItem`/`SetOnOpenItem`, and attach the callback in `Shell.SetAlbums` (avoids the dirty `library.go` another agent is editing; viewer/store are read at click time so per-drive viewer swaps stay correct).
   - 2026-11-18T09:10:00Z: Done. albums: `Options.OnOpenItem` + `SetOnOpenItem`; member cards render thumbnails through a bounded async bitmap cache (`bitmapFor`, mirrors catalog: pending/fetched maps, 4-worker limit, decode on UI thread, `services.Invalidate`) with a skeleton while loading; plain click invokes the callback. shell: `SetAlbums` attaches `Shell.openInViewer` (viewer read at click time; default albums screen in `New` wired the same way). Tests: member click fires callback, nil callback safe, thumbnails decode, and a shell end-to-end test (seed album + member, click through gallery → detail → viewer opens). Verified: full suite, `-race` on albums+shell, `go tool mygo vet .` on both packages, gofmt clean.
 
+#### UI-CATALOG-ALBUMS-PAGINATION: Pager for Library Grid & Album Members
+
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-18T13:22:11Z
+- Depends on: UI-CATALOG-GRID, UI-ALBUM-GALLERY
+- Allowed paths/scope: `internal/ui/screens/catalog/**`, `internal/ui/screens/albums/**`
+- Acceptance: the catalog grid and the album detail member grid page through results with lobe's `nav.Pagination` (server-side Limit/Offset via `MediaRepo.List`), reset to page 1 when the query/filter/sort/album changes, clamp to the last page when items shrink, and hide on a single page; tests + full suite + race + mygo vet green.
+- Notes:
+  - 2026-11-18T13:22:11Z: Claimed by zed-agent (GLM) per direct user request. Catalog currently hard-loads `Limit: 500` and album detail caps members at 100 with no pager. Plan: 60-item pages, cache key includes page, pager row under the grid/member list, `HideOnSinglePage`.
+
 ---
 
 ## 4. Activity Log
@@ -539,6 +550,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-18T08:32:09Z [zed-agent (GLM)] UI-CATALOG-VIEWER-POLISH: Reviewed and committed the unclaimed in-flight catalog click-to-open + viewer info-rail refactor (found with two review fixes: duplicate card.OnClick registration, stale TestViewerDeepLink close-text). Full suite, -race, mygo vet green.
 - 2026-11-18T09:00:18Z [zed-agent (GLM)] UI-ALBUMS-MEMBER-OPEN: Claimed (in_progress); album detail member cards get real thumbnails + open-in-viewer deep-link, wired from Shell.SetAlbums.
 - 2026-11-18T09:10:00Z [zed-agent (GLM)] UI-ALBUMS-MEMBER-OPEN: Done. Member cards show real thumbnails (async bounded cache) and click through to the media viewer; shell attaches the deep-link in SetAlbums.
+- 2026-11-18T13:22:11Z [zed-agent (GLM)] UI-CATALOG-ALBUMS-PAGINATION: Claimed (in_progress) per user request; nav.Pagination pagers for the catalog grid and album member list with server-side Limit/Offset.
 - 2026-11-18T08:41:30Z [agent-b] Stats/count investigation: no database currently contains 1345 rows (drive root 1375, media/albums 15278, albums 11), so the displayed value was a stale dashboard snapshot. Added MediaRepo.Count(), used it for dashboard and Discover catalog totals, added a 5s dashboard refresh, made dashboardSource nil-safe, and added a regression test. Full suite, -race, mygo vet pass.
 - 2026-11-18T09:19:59Z [agent-b] Library location propagation: the folder chosen in Discover is now persisted at <drive>/.painless/library.json and drives DB/repo selection for catalog, albums, dashboard and Discover; media paths and thumbnails stay relative to the drive mount. Added OnAlbumFolderChanged hook and regression test. Also fixed a transient compile error in zed-agent's in-flight albums.go (ui.Services compared with nil). Full suite, -race, mygo vet pass.
 - 2026-11-18T11:32:49Z [agent-b] Sidebar redesign per DESIGN.md: replaced Lobe display.List with flat custom nav rows (tokenized 12px labels, Ink Secondary/Tertiary, Spotlight active fill, 6px gaps, single-line truncation, icon centering when collapsed); storage gauge now uses a hairline divider and a 10px/800 spaced "STORAGE" micro-label with the semantic Primary/Amber/Red gauge. Verified dark expanded/collapsed renders; full suite, -race, mygo vet pass.
