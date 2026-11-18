@@ -8,97 +8,115 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/field"
+	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	lobetheme "github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"painless/internal/domain"
+	"painless/internal/ui/components/mediacard"
 )
 
 func (s *Screen) galleryView(c *mui.Context, tk *lobetheme.Tokens) {
-	// 1. Top action bar
+	// Toolbar: quiet search, grow spacer, one primary action.
 	mui.Row(c).Shrink(0).Gap(12).AlignItems(mui.Center).Children(func() {
 		field.SearchBar(c, &s.searchQuery, field.SearchBarProps{
 			Placeholder: "Filter albums...",
+			Variant:     field.InputFilled,
 			Size:        lobetheme.Small,
-		}).Width(260)
-
+		}).Width(280)
 		mui.Box(c).Grow(1)
-
 		action.Button(c, "New Album", action.ButtonProps{
 			Variant: action.Primary,
 			Size:    lobetheme.Small,
-		}).Disabled(s.readOnly).OnClick(func() {
-			s.openCreateModal()
-		})
+		}).Disabled(s.readOnly).OnClick(func() { s.openCreateModal() })
 	})
 
 	filtered := s.getFilteredSummaries()
-
-	// 2. Empty state
 	if len(filtered) == 0 {
+		if s.albumsLoading && len(s.summaries) == 0 {
+			s.gallerySkeleton(c)
+			return
+		}
 		mui.Scroll(c).Grow(1).Basis(0).Children(func() {
-			mui.Column(c).Fill().Center().Padding(48).Gap(16).Children(func() {
+			mui.Column(c).Fill().Center().Padding(40).Gap(12).Children(func() {
 				display.Empty(c, display.EmptyProps{
 					Icon:        lucide.Images(),
 					Title:       "No albums yet",
 					Description: "Organize your photos and videos into structured collections on your external drive.",
 				})
-
 				action.Button(c, "Create Your First Album", action.ButtonProps{
 					Variant: action.Primary,
 					Size:    lobetheme.Middle,
-				}).Disabled(s.readOnly).OnClick(func() {
-					s.openCreateModal()
-				})
+				}).Disabled(s.readOnly).OnClick(func() { s.openCreateModal() })
 			})
 		})
 		return
 	}
 
-	// 3. Album Cards Grid
 	mui.Scroll(c).Grow(1).Basis(0).Children(func() {
-		mui.Row(c).Wrap().Gap(16).Children(func() {
-			for _, sum := range filtered {
-				s.albumCard(c, tk, sum)
+		// Responsive equal columns: cards stretch to fill the content width.
+		layout.Grid(c, layout.GridProps{
+			MaxItemWidth: 220,
+			MaxColumns:   6,
+			Gap:          12,
+		}).Children(func() {
+			for index, sum := range filtered {
+				s.albumCard(c, tk, sum, index)
 			}
 		})
 	})
 }
 
-func (s *Screen) openCreateModal() {
-	s.mu.Lock()
-	s.createOpen = true
-	s.createName = ""
-	s.createDesc = ""
-	s.createErr = ""
-	s.mu.Unlock()
-	s.requestRedraw()
+// gallerySkeleton holds the gallery's place while the first summaries fetch
+// loads: album-card-shaped placeholders with a cover block and text rows.
+func (s *Screen) gallerySkeleton(c *mui.Context) {
+	tk := lobetheme.TokensOf(c)
+	mui.Scroll(c).Grow(1).Basis(0).Label("albums-loading").Children(func() {
+		layout.Grid(c, layout.GridProps{
+			MaxItemWidth: 220,
+			MaxColumns:   6,
+			Gap:          12,
+		}).Children(func() {
+			for i := 0; i < 12; i++ {
+				mui.Column(c).FillWidth().Radius(tk.BorderRadiusLG).Background(tk.BgContainer).
+					Border(1, tk.BorderSecondary).Children(func() {
+					display.Skeleton(c, display.SkeletonProps{Height: 130})
+					mui.Column(c).Padding(12).Gap(8).Children(func() {
+						display.Skeleton(c, display.SkeletonProps{Width: 110, Height: 14})
+						display.Skeleton(c, display.SkeletonProps{Width: 150, Height: 12})
+						display.Skeleton(c, display.SkeletonProps{Width: 64, Height: 11})
+					})
+				})
+			}
+		})
+	})
 }
 
-func (s *Screen) albumCard(c *mui.Context, tk *lobetheme.Tokens, sum domain.AlbumSummary) {
+func (s *Screen) albumCard(c *mui.Context, tk *lobetheme.Tokens, sum domain.AlbumSummary, index int) {
 	c.Key(fmt.Sprintf("album-%d", sum.ID))
 
-	mui.Column(c).Width(240).Radius(10).Background(tk.BgContainer).
-		Border(1, tk.BorderSecondary).Children(func() {
-		// Cover area
-		mui.Column(c).Height(130).Background(tk.BgElevated).Center().
-			OnClick(func() {
-				s.OpenAlbum(sum)
-			}).Children(func() {
-			mui.Icon(c, lucide.Images()).FontSize(36).TextColor(tk.TextTertiary)
+	card := mui.Column(c).FillWidth().Radius(tk.BorderRadiusLG).Background(tk.BgContainer).
+		Border(1, tk.BorderSecondary)
+	card.Children(func() {
+		// Cover preview from the album's first indexed item; the icon is the
+		// fallback until a thumbnail has been cached.
+		mui.Column(c).Height(130).Background(tk.BgElevated).Center().Clip().
+			OnClick(func() { s.OpenAlbum(sum) }).Children(func() {
+			if sum.PreviewItem != nil {
+				if bitmap := s.bitmapFor(*sum.PreviewItem); bitmap != nil {
+					mui.Image(c, bitmap).FillWidth().Height(130).Fit(mui.Cover)
+					return
+				}
+			}
+			mui.Icon(c, lucide.FolderClosed()).FontSize(36).TextColor(tk.TextTertiary)
 		})
 
-		// Details area
 		mui.Column(c).Padding(12).Gap(8).Children(func() {
 			mui.Row(c).AlignItems(mui.Center).Children(func() {
 				mui.Text(c, sum.Name).FontSize(14).FontWeight(600).Grow(1).SingleLine().
-					OnClick(func() {
-						s.OpenAlbum(sum)
-					})
-
+					OnClick(func() { s.OpenAlbum(sum) })
 				display.Tag(c, fmt.Sprintf("%d", sum.MediaCount), display.TagProps{
-					Size:  lobetheme.Small,
-					Color: display.TagBlue,
+					Size: lobetheme.Small, Color: display.TagBlue,
 				})
 			})
 
@@ -108,48 +126,28 @@ func (s *Screen) albumCard(c *mui.Context, tk *lobetheme.Tokens, sum domain.Albu
 			}
 			mui.Text(c, desc).FontSize(12).TextColor(tk.TextSecondary).SingleLine()
 
-			// Card action buttons
+			mui.Box(c).Height(1).FillWidth().Background(tk.BorderSecondary)
 			mui.Row(c).Gap(6).AlignItems(mui.Center).Children(func() {
 				action.Button(c, "Open", action.ButtonProps{
-					Variant: action.Default,
-					Size:    lobetheme.Small,
-				}).OnClick(func() {
-					s.OpenAlbum(sum)
-				})
-
+					Variant: action.Text, Size: lobetheme.Small,
+				}).OnClick(func() { s.OpenAlbum(sum) })
 				mui.Box(c).Grow(1)
-
 				if s.readOnly {
 					return
 				}
-
-				// Edit button
 				action.ActionIcon(c, lucide.Pencil(), action.ActionIconProps{
-					Size:  lobetheme.Small,
-					Title: "Edit album info",
-				}).OnClick(func() {
-					s.openEditModal(sum)
-				})
-
-				// Merge button
+					Size: lobetheme.Small, Title: "Edit album info",
+				}).OnClick(func() { s.openEditModal(sum) })
 				action.ActionIcon(c, lucide.GitMerge(), action.ActionIconProps{
-					Size:  lobetheme.Small,
-					Title: "Merge into another album",
-				}).OnClick(func() {
-					s.openMergeModal(sum)
-				})
-
-				// Delete button
+					Size: lobetheme.Small, Title: "Merge into another album",
+				}).OnClick(func() { s.openMergeModal(sum) })
 				action.ActionIcon(c, lucide.Trash2(), action.ActionIconProps{
-					Size:   lobetheme.Small,
-					Danger: true,
-					Title:  "Delete album",
-				}).OnClick(func() {
-					s.openDeleteModal(sum)
-				})
+					Size: lobetheme.Small, Danger: true, Title: "Delete album",
+				}).OnClick(func() { s.openDeleteModal(sum) })
 			})
 		})
 	})
+	mediacard.ApplyReveal(c, card, s.galleryReveal, index)
 }
 
 func (s *Screen) getFilteredSummaries() []domain.AlbumSummary {
@@ -159,49 +157,46 @@ func (s *Screen) getFilteredSummaries() []domain.AlbumSummary {
 	if strings.TrimSpace(s.searchQuery) == "" {
 		return s.summaries
 	}
-
-	q := strings.ToLower(strings.TrimSpace(s.searchQuery))
-	var res []domain.AlbumSummary
+	query := strings.ToLower(strings.TrimSpace(s.searchQuery))
+	var result []domain.AlbumSummary
 	for _, sum := range s.summaries {
-		if strings.Contains(strings.ToLower(sum.Name), q) {
-			res = append(res, sum)
-		} else if sum.Description != nil && strings.Contains(strings.ToLower(*sum.Description), q) {
-			res = append(res, sum)
+		if strings.Contains(strings.ToLower(sum.Name), query) {
+			result = append(result, sum)
+		} else if sum.Description != nil && strings.Contains(strings.ToLower(*sum.Description), query) {
+			result = append(result, sum)
 		}
 	}
-	return res
+	return result
+}
+
+func (s *Screen) openCreateModal() {
+	s.mu.Lock()
+	s.createOpen, s.createName, s.createDesc, s.createErr = true, "", "", ""
+	s.mu.Unlock()
+	s.requestRedraw()
 }
 
 func (s *Screen) openEditModal(sum domain.AlbumSummary) {
 	s.mu.Lock()
-	s.editOpen = true
-	s.editTarget = &sum
-	s.editName = sum.Name
+	s.editOpen, s.editTarget, s.editName, s.editErr = true, &sum, sum.Name, ""
 	s.editDesc = ""
 	if sum.Description != nil {
 		s.editDesc = *sum.Description
 	}
-	s.editErr = ""
 	s.mu.Unlock()
 	s.requestRedraw()
 }
 
 func (s *Screen) openMergeModal(sum domain.AlbumSummary) {
 	s.mu.Lock()
-	s.mergeOpen = true
-	s.mergeSource = &sum
-	s.mergeTarget = ""
-	s.mergeErr = ""
+	s.mergeOpen, s.mergeSource, s.mergeTarget, s.mergeErr = true, &sum, "", ""
 	s.mu.Unlock()
 	s.requestRedraw()
 }
 
 func (s *Screen) openDeleteModal(sum domain.AlbumSummary) {
 	s.mu.Lock()
-	s.deleteOpen = true
-	s.deleteTarget = &sum
-	s.deleteMode = "soft"
-	s.deleteErr = ""
+	s.deleteOpen, s.deleteTarget, s.deleteMode, s.deleteErr = true, &sum, "soft", ""
 	s.mu.Unlock()
 	s.requestRedraw()
 }
