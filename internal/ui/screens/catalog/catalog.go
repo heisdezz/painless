@@ -11,6 +11,7 @@ import (
 	mui "github.com/egoist/mygo/ui"
 
 	"painless/internal/domain"
+	"painless/internal/ui/components/mediacard"
 )
 
 // Source lists media items. *storage.MediaRepo satisfies it.
@@ -52,6 +53,15 @@ func (emptySource) List(context.Context, domain.MediaListParams) (*domain.MediaL
 	return &domain.MediaListPage{}, nil
 }
 
+// pageResult carries one finished fetch from its worker goroutine to the UI
+// thread. The key lets a stale result, one fetched before the query changed,
+// be told apart from the one now wanted.
+type pageResult struct {
+	key  string
+	page *domain.MediaListPage
+	err  error
+}
+
 // Options configures a catalog screen.
 type Options struct {
 	Source  Source
@@ -80,6 +90,19 @@ type Screen struct {
 	loadErr   error
 	loadedFor string
 
+	// pageNum is the 1-based catalog page; nav.Pagination mutates it in place.
+	pageNum    int
+	lastKey    string
+	loadedPage int
+
+	// fetchKey is the page now being fetched off-thread; results collects
+	// finished fetches for the UI thread to drain; reveal choreographs the
+	// cards' staggered entrance when the first page arrives.
+	fetchKey     string
+	results      chan pageResult
+	reveal       *mediacard.Reveal
+	skeletonGrid mui.GridState
+
 	grid      mui.GridState
 	selected  int
 	pivot     int
@@ -94,7 +117,19 @@ type Screen struct {
 	bitmaps map[string]*mui.Bitmap
 }
 
-const debounceDelay = 250 * time.Millisecond
+const (
+	// catalogPageSize is how many items one catalog page loads from SQLite and
+	// renders into the virtualized grid.
+	catalogPageSize = 60
+
+	debounceDelay = 250 * time.Millisecond
+
+	// Reveal choreography of the cards' first entrance: 18ms per card, the
+	// whole wave capped at 360ms of delays, each card rising for 300ms.
+	revealPer      = 18 * time.Millisecond
+	revealMax      = 360 * time.Millisecond
+	revealDuration = 300 * time.Millisecond
+)
 
 // New creates a catalog screen. Missing dependencies get harmless defaults.
 func New(opts Options) *Screen {
@@ -114,6 +149,8 @@ func New(opts Options) *Screen {
 		fetched:  make(map[string][]byte),
 		limits:   make(chan struct{}, 4),
 		bitmaps:  make(map[string]*mui.Bitmap),
+		page:     &domain.MediaListPage{},
+		results:  make(chan pageResult, 1),
 	}
 	screen.grid.Key = func(i int) any { return screen.page.Items[i].ID }
 	screen.grid.Label = func(i int) string {
@@ -160,11 +197,52 @@ func (s *Screen) syncSearch() {
 }
 
 func (s *Screen) load() {
-	key := strings.Join([]string{s.committedQuery, strconv.Itoa(s.filter), strconv.Itoa(s.sort)}, "|")
-	if key == s.loadedFor && s.page != nil {
+	s.drainResults()
+	key := pageKey(s.committedQuery, s.filter, s.sort)
+	if key == s.loadedFor || key == s.fetchKey {
 		return
 	}
-	s.loadedFor = key
+	s.fetchKey = key
+	params := s.listParams()
+	source, results, services := s.source, s.results, s.services
+	go func() {
+		page, err := source.List(context.Background(), params)
+		results <- pageResult{key: key, page: page, err: err}
+		services.Invalidate()
+	}()
+}
+
+// drainResults applies finished fetches. It runs before a new fetch starts so
+// a worker blocked on the one-slot channel is released: with at most two
+// fetches in flight, draining here keeps every send from sticking.
+func (s *Screen) drainResults() {
+	for {
+		select {
+		case r := <-s.results:
+			if r.key != s.fetchKey {
+				continue
+			}
+			wasEmpty := len(s.page.Items) == 0
+			s.fetchKey = ""
+			s.loadErr = r.err
+			if r.page == nil {
+				r.page = &domain.MediaListPage{}
+			}
+			s.page, s.loadedFor = r.page, r.key
+			if s.selected >= len(s.page.Items) {
+				s.selected = -1
+			}
+			if wasEmpty && len(s.page.Items) > 0 {
+				s.reveal = mediacard.NewReveal(time.Now(), revealPer, revealMax, revealDuration)
+			}
+		default:
+			return
+		}
+	}
+}
+
+// listParams builds the query the current filter and sort selection mean.
+func (s *Screen) listParams() domain.MediaListParams {
 	params := domain.MediaListParams{
 		Limit:     500,
 		Search:    s.committedQuery,
@@ -185,14 +263,12 @@ func (s *Screen) load() {
 	case 3:
 		params.SortBy = domain.SortBySize
 	}
-	page, err := s.source.List(context.Background(), params)
-	s.page, s.loadErr = page, err
-	if s.page == nil {
-		s.page = &domain.MediaListPage{}
-	}
-	if s.selected >= len(s.page.Items) {
-		s.selected = -1
-	}
+	return params
+}
+
+// pageKey identifies a list query: committed search, filter and sort.
+func pageKey(query string, filter, sort int) string {
+	return strings.Join([]string{query, strconv.Itoa(filter), strconv.Itoa(sort)}, "|")
 }
 
 // Reload invalidates the cached page after an active library mutation.

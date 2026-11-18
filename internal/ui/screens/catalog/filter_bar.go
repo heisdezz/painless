@@ -31,14 +31,17 @@ func (s *Screen) filterBar(c *mui.Context) {
 		action.Segmented(c, &s.filter, filterOptions, action.SegmentedProps{Size: lobetheme.Small})
 
 		mui.Box(c).Grow(1)
-		total := 0
-		if s.page != nil {
-			total = s.page.Total
+		if s.fetchKey != "" && s.page.Total == 0 {
+			display.Tag(c, "Loading…", display.TagProps{
+				Size:  lobetheme.Small,
+				Color: display.TagBlue,
+			}).TextColor(tk.TextSecondary).Shrink(0)
+		} else {
+			display.Tag(c, fmt.Sprintf("%d items", s.page.Total), display.TagProps{
+				Size:  lobetheme.Small,
+				Color: display.TagBlue,
+			}).TextColor(tk.TextSecondary).Shrink(0)
 		}
-		display.Tag(c, fmt.Sprintf("%d items", total), display.TagProps{
-			Size:  lobetheme.Small,
-			Color: display.TagBlue,
-		}).TextColor(tk.TextSecondary).Shrink(0)
 
 		selected := "date_desc"
 		if s.sort >= 0 && s.sort < len(sortOptions) {
