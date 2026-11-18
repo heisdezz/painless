@@ -462,6 +462,17 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - Notes:
   - 2026-11-18T08:32:09Z: Work found uncommitted in the tree with no tracker claim (last agent edit ~7h prior); reviewed and completed by zed-agent (GLM). Review fixes: removed a duplicate `card.OnClick` registration in `media_card.go` (mygo appends actions per frame, so a plain click would have opened the viewer twice); updated `TestViewerDeepLink` to click the new "Back to Library" action after the text "Close" button was removed. Verified: full suite, `-race` on all UI/state/wiring packages, `go tool mygo vet .` on catalog + viewer, `go vet`, gofmt clean.
 
+#### UI-ALBUMS-MEMBER-OPEN: Album Member Thumbnails & Open-in-Viewer
+
+- Status: in_progress
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-18T09:00:18Z
+- Depends on: UI-ALBUM-GALLERY, UI-VIEWER-HOSTING, UI-CATALOG-VIEWER-POLISH
+- Allowed paths/scope: `internal/ui/screens/albums/**`, `internal/ui/shell/shell.go` (SetAlbums wiring only), `internal/ui/shell/*_test.go`
+- Acceptance: album detail member cards render real thumbnails (async bitmap cache, bounded pool, skeleton while loading) and open the item in the media viewer on plain click; shell attaches the viewer deep-link when hosting the albums screen; tests + full suite + race + mygo vet green.
+- Notes:
+  - 2026-11-18T09:00:18Z: Claimed by zed-agent (GLM). Gap found in the follow-up sweep after the registry emptied: `albums.Screen` stores `Thumbs` but never uses it (member cards render a static placeholder icon), and no path leads from an album member to the viewer. Plan: mirror catalog's async `bitmapFor` cache in albums, add `Options.OnOpenItem`/`SetOnOpenItem`, and attach the callback in `Shell.SetAlbums` (avoids the dirty `library.go` another agent is editing; viewer/store are read at click time so per-drive viewer swaps stay correct).
+
 ---
 
 ## 4. Activity Log
@@ -525,3 +536,5 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-17T23:54:33Z [zed-agent (GLM)] SYS-DISCOVER-CATALOG-COUNT: Done. Discover Scanner Status panel now shows the live SQLite cataloged total via a 500ms-TTL cached count wired from libraryController. Heads-up to the agent editing internal/ui/screens/catalog: TestCatalogSelectionAndBatchAction currently fails on your in-flight uncommitted changes (click-to-select).
 - 2026-11-18T08:09:59Z [zed-agent (GLM)] SYS-RESTORE-REOPEN: Done. Backup restore now publishes EventLibraryRestored and the shell reopens the live library connection immediately - no app restart needed after restoring a backup.
 - 2026-11-18T08:32:09Z [zed-agent (GLM)] UI-CATALOG-VIEWER-POLISH: Reviewed and committed the unclaimed in-flight catalog click-to-open + viewer info-rail refactor (found with two review fixes: duplicate card.OnClick registration, stale TestViewerDeepLink close-text). Full suite, -race, mygo vet green.
+- 2026-11-18T09:00:18Z [zed-agent (GLM)] UI-ALBUMS-MEMBER-OPEN: Claimed (in_progress); album detail member cards get real thumbnails + open-in-viewer deep-link, wired from Shell.SetAlbums.
+- 2026-11-18T08:41:30Z [agent-b] Stats/count investigation: no database currently contains 1345 rows (drive root 1375, media/albums 15278, albums 11), so the displayed value was a stale dashboard snapshot. Added MediaRepo.Count(), used it for dashboard and Discover catalog totals, added a 5s dashboard refresh, made dashboardSource nil-safe, and added a regression test. Full suite, -race, mygo vet pass.
