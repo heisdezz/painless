@@ -485,6 +485,17 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - Notes:
   - 2026-11-18T13:22:11Z: Claimed by zed-agent (GLM) per direct user request. Catalog currently hard-loads `Limit: 500` and album detail caps members at 100 with no pager. Plan: 60-item pages, cache key includes page, pager row under the grid/member list, `HideOnSinglePage`.
 
+#### UI-CATALOG-ASYNC-REVEAL: Non-blocking Catalog Load, Skeleton Grid & Staggered Card Reveal
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-18T16:15:13Z
+- Depends on: UI-CATALOG-GRID, UI-CATALOG-VIEWER-POLISH
+- Allowed paths/scope: `internal/ui/screens/catalog/**`, `internal/ui/components/mediacard/**`, `internal/ui/components/mediagrid/**`
+- Acceptance: the first catalog visit never blocks the UI thread on the SQLite `List` (cold reads of a drive library); an empty grid shows a card-sized skeleton while the first page loads; cards enter with a restrained stagger when the first page arrives; requeries keep the stale page visible and never re-run the stagger; tests + full suite + race + mygo vet green.
+- Notes:
+  - 2026-11-18T16:15:13Z: Done. catalog: `load()` now fetches off-thread — it drains finished fetches from a one-slot `results` channel (drain-before-start so a blocked worker is always released; stale results dropped by key), renders stale-while-revalidate on requery, and shows `s.fetchKey != ""` as the loading signal. First-load skeleton: `skeletonGridView` renders 30 card-chrome tiles (168x188 border/padding/radius matching the real card) filled with `display.Skeleton` blocks, `SkeletonSweep` on the preview; labeled `catalog-loading` for tests; own `GridState` so it never borrows the real grid's scroll. Filter bar shows a `Loading…` tag while the first page is pending (`N items` string unchanged after load). Reveal: `mediacard.Reveal` choreography applied in `mediacard.Render` via the two-frame `AnimatePose` enter (`Pose{Y: 8, Fade: 1}` → rest), 18ms per card, 360ms cap on slot delays, 300ms per-card duration; per-card delay frozen in `ui.Local` state so thumbnail rebuilds never restart a mid-flight entrance; fires only on the empty→items transition, so requeries and `Reload()` never restagger; nil Reveal (dashboard strip) renders unchanged. Tests: `waitUntil`/`waitLoaded` frame pumps, `gatedSource` for a slow cold read; new `TestCatalogLoadDoesNotBlockFirstFrame`, `TestCatalogSkeletonShowsWhileLoading`, `TestCatalogRevealStaggersOnFirstLoad`. Verified: full suite, `go test -race` on catalog, vet, mygo vet, gofmt; committed d49595f.
+
 ---
 
 ## 4. Activity Log
@@ -559,3 +570,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-18T12:17:20Z [agent-b] Corrected album gallery: removed media-thumbnail loading from album cards (PreviewItem bitmapFor). The gallery shows album identity only (folder tile, name, count, description); member media loads only after opening an album. Verified against the real drive catalog; full suite and mygo vet pass.
 - 2026-11-18T12:27:19Z [agent-b] Album gallery layout: replaced the fixed-240px wrapped row with Lobe layout.Grid (MaxItemWidth 220, up to 6 columns, 12px gap) and made cards FillWidth so they stretch into equal columns that fill the content width. Verified against the real 56-album catalog at 1200px; full suite and mygo vet pass.
 - 2026-11-18T12:42:34Z [agent-b] Albums screen: removed the generic shell heading/description for Albums (content dispatch now skips it alongside dashboard/viewer) and restored cover thumbnails on album cards from PreviewItem with folder-icon fallback. Updated two shell tests that asserted the removed headings to check screen content. Verified real-catalog render; full suite, race, mygo vet pass.
+- 2026-11-18T16:15:13Z [zed-agent (GLM)] UI-CATALOG-ASYNC-REVEAL: Done. Catalog page loads off-thread (one-slot results channel, drain-before-start, stale-while-revalidate); first load shows a card-sized sweeping skeleton grid (`catalog-loading`) and a `Loading…` count tag; cards enter with a restrained stagger on empty→items (mediacard.Reveal: Y:8 rise + fade, 18ms/card, 360ms cap, 300ms each, delay frozen per card via ui.Local, never re-run on requery). Full suite, -race on catalog, mygo vet, gofmt green; commit d49595f.
