@@ -3,12 +3,15 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	mui "github.com/egoist/mygo/ui"
+	"github.com/lobehub/lobe-mygo/pkg/nav"
+	lobetheme "github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"painless/internal/domain"
 	"painless/internal/ui/components/mediacard"
@@ -151,6 +154,7 @@ func New(opts Options) *Screen {
 		bitmaps:  make(map[string]*mui.Bitmap),
 		page:     &domain.MediaListPage{},
 		results:  make(chan pageResult, 1),
+		pageNum:  1,
 	}
 	screen.grid.Key = func(i int) any { return screen.page.Items[i].ID }
 	screen.grid.Label = func(i int) string {
@@ -175,6 +179,7 @@ func (s *Screen) View(c *mui.Context) {
 	mui.Column(c).Fill().Padding(0, 28, 24).Gap(12).Children(func() {
 		s.filterBar(c)
 		s.gridView(c)
+		s.pager(c)
 		s.actionBar(c)
 	})
 }
@@ -198,9 +203,20 @@ func (s *Screen) syncSearch() {
 
 func (s *Screen) load() {
 	s.drainResults()
-	key := pageKey(s.committedQuery, s.filter, s.sort)
+	base := pageKey(s.committedQuery, s.filter, s.sort)
+	if base != s.lastKey {
+		// A new query, filter or sort always restarts at the first page.
+		s.pageNum = 1
+		s.lastKey = base
+	}
+	key := base + "|" + strconv.Itoa(s.pageNum)
 	if key == s.loadedFor || key == s.fetchKey {
 		return
+	}
+	if s.pageNum != s.loadedPage {
+		// The page-local grid cursor has no meaning on another page.
+		s.selected, s.pivot = -1, -1
+		s.loadedPage = s.pageNum
 	}
 	s.fetchKey = key
 	params := s.listParams()
@@ -232,6 +248,14 @@ func (s *Screen) drainResults() {
 			if s.selected >= len(s.page.Items) {
 				s.selected = -1
 			}
+			// After deletions the stored page can sit past the end; snap back
+			// to the last non-empty page and refetch it next frame.
+			if len(s.page.Items) == 0 && s.page.Total > 0 && s.pageNum > 1 {
+				if pages := (s.page.Total + catalogPageSize - 1) / catalogPageSize; pages > 0 && s.pageNum > pages {
+					s.pageNum = pages
+					s.loadedFor = ""
+				}
+			}
 			if wasEmpty && len(s.page.Items) > 0 {
 				s.reveal = mediacard.NewReveal(time.Now(), revealPer, revealMax, revealDuration)
 			}
@@ -244,7 +268,8 @@ func (s *Screen) drainResults() {
 // listParams builds the query the current filter and sort selection mean.
 func (s *Screen) listParams() domain.MediaListParams {
 	params := domain.MediaListParams{
-		Limit:     500,
+		Limit:     catalogPageSize,
+		Offset:    (s.pageNum - 1) * catalogPageSize,
 		Search:    s.committedQuery,
 		SortOrder: domain.SortOrderDesc,
 		SortBy:    domain.SortByDate,
@@ -273,6 +298,25 @@ func pageKey(query string, filter, sort int) string {
 
 // Reload invalidates the cached page after an active library mutation.
 func (s *Screen) Reload() { s.loadedFor = "" }
+
+// pager pages through the whole result set below the grid. nav.Pagination
+// mutates pageNum in place; the next frame refetches with the new offset.
+func (s *Screen) pager(c *mui.Context) {
+	if s.page == nil || s.page.Total <= catalogPageSize {
+		return
+	}
+	mui.Row(c).Shrink(0).AlignItems(mui.Center).Children(func() {
+		nav.Pagination(c, &s.pageNum, nav.PaginationProps{
+			Total:            s.page.Total,
+			PageSize:         catalogPageSize,
+			HideOnSinglePage: true,
+			Size:             lobetheme.Small,
+			ShowTotal: func(total, from, to int) string {
+				return fmt.Sprintf("%d-%d of %d", from, to, total)
+			},
+		})
+	})
+}
 
 // SelectedIDs returns the IDs chosen in the grid.
 func (s *Screen) SelectedIDs() []int64 {
