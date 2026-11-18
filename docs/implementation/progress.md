@@ -476,14 +476,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-CATALOG-ALBUMS-PAGINATION: Pager for Library Grid & Album Members
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GLM)
-- Updated: 2026-11-18T13:22:11Z
+- Updated: 2026-11-18T17:40:00Z
 - Depends on: UI-CATALOG-GRID, UI-ALBUM-GALLERY
 - Allowed paths/scope: `internal/ui/screens/catalog/**`, `internal/ui/screens/albums/**`
 - Acceptance: the catalog grid and the album detail member grid page through results with lobe's `nav.Pagination` (server-side Limit/Offset via `MediaRepo.List`), reset to page 1 when the query/filter/sort/album changes, clamp to the last page when items shrink, and hide on a single page; tests + full suite + race + mygo vet green.
 - Notes:
   - 2026-11-18T13:22:11Z: Claimed by zed-agent (GLM) per direct user request. Catalog currently hard-loads `Limit: 500` and album detail caps members at 100 with no pager. Plan: 60-item pages, cache key includes page, pager row under the grid/member list, `HideOnSinglePage`.
+  - 2026-11-18T17:40:00Z: Done. catalog: `listParams` now `Limit: catalogPageSize (60), Offset: (pageNum-1)*60`; page-1 reset when the query|filter|sort base key changes; `selected/pivot` cleared on page change; `drainResults` snaps past-end pages back to the last non-empty page after deletions; `pager()` renders `nav.Pagination` (`HideOnSinglePage`, `Size: Small`, `ShowTotal` "%d-%d of %d") between grid and action bar. albums: `memberPageSize = 60` with `memberPage/membersFor` (UI-thread only), `OpenAlbum` resets to page 1, `ensureDetailItems` refetches when the album|page key drifts, `memberPager` under the member strip. Member fetches are now off-thread (keyed `albumID|page` results drained per frame, stale drops, skeleton tiles while loading) fixing a UI-thread SQLite stall; `mediacard.ApplyReveal` exported + `SkeletonTile` added for the shared chrome. Tests: catalog pages through a paged source, resets on search, hides on single page; albums page through members and reset on album open; existing member/viewer tests now frame-pump for the async loads and the `mockMediaRepo` honors Limit/Offset under a mutex. Verified: full suite, `-race` (catalog, albums, shell), `go tool mygo vet .` on both packages, go vet on both, gofmt clean; committed 222bf18 (catalog) + ac74a17 (albums).
 
 #### UI-CATALOG-ASYNC-REVEAL: Non-blocking Catalog Load, Skeleton Grid & Staggered Card Reveal
 
@@ -571,3 +572,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-18T12:27:19Z [agent-b] Album gallery layout: replaced the fixed-240px wrapped row with Lobe layout.Grid (MaxItemWidth 220, up to 6 columns, 12px gap) and made cards FillWidth so they stretch into equal columns that fill the content width. Verified against the real 56-album catalog at 1200px; full suite and mygo vet pass.
 - 2026-11-18T12:42:34Z [agent-b] Albums screen: removed the generic shell heading/description for Albums (content dispatch now skips it alongside dashboard/viewer) and restored cover thumbnails on album cards from PreviewItem with folder-icon fallback. Updated two shell tests that asserted the removed headings to check screen content. Verified real-catalog render; full suite, race, mygo vet pass.
 - 2026-11-18T16:15:13Z [zed-agent (GLM)] UI-CATALOG-ASYNC-REVEAL: Done. Catalog page loads off-thread (one-slot results channel, drain-before-start, stale-while-revalidate); first load shows a card-sized sweeping skeleton grid (`catalog-loading`) and a `Loading…` count tag; cards enter with a restrained stagger on empty→items (mediacard.Reveal: Y:8 rise + fade, 18ms/card, 360ms cap, 300ms each, delay frozen per card via ui.Local, never re-run on requery). Full suite, -race on catalog, mygo vet, gofmt green; commit d49595f.
+- 2026-11-18T17:43:11Z [zed-agent (GLM)] UI-CATALOG-ALBUMS-PAGINATION: Done. Catalog grid and album member list page through results with nav.Pagination (60/page, server-side Limit/Offset, HideOnSinglePage, from-to-of total). Query/filter/sort/album changes reset to page 1; past-end pages snap back after deletions; paging clears the grid selection. Albums member + gallery fetches moved off-thread (keyed per-frame drain, stale drop, mediacard.SkeletonTile while loading) fixing a UI-thread SQLite stall. Full suite, -race (catalog/albums/shell), mygo vet, go vet, gofmt green; commits 222bf18 + ac74a17.
