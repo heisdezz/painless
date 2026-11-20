@@ -65,11 +65,11 @@ func (d dashboardSource) GetDashboardStats(ctx context.Context) (dashboard.Stats
 	return stats, nil
 }
 
-// GetRecentMedia returns the newest media items for the carousel.
+// GetRecentMedia returns the most recently added media items for the carousel.
 func (d dashboardSource) GetRecentMedia(ctx context.Context, limit int) ([]domain.MediaItem, error) {
 	page, err := d.media.List(ctx, domain.MediaListParams{
 		Limit:     limit,
-		SortBy:    domain.SortByDate,
+		SortBy:    domain.SortByAdded,
 		SortOrder: domain.SortOrderDesc,
 	})
 	if err != nil {

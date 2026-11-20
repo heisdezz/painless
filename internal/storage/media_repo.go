@@ -248,6 +248,8 @@ func (r *MediaRepo) List(ctx context.Context, params domain.MediaListParams) (*d
 		sortColumn = "file_size"
 	case domain.SortByDate:
 		sortColumn = "created_at"
+	case domain.SortByAdded:
+		sortColumn = "id"
 	}
 
 	direction := "DESC"

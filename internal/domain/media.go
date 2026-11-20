@@ -32,6 +32,9 @@ const (
 	SortByDate MediaSortBy = "date"
 	SortByName MediaSortBy = "name"
 	SortBySize MediaSortBy = "size"
+	// SortByAdded orders by library insertion order: the most recently
+	// indexed media items come first.
+	SortByAdded MediaSortBy = "added"
 )
 
 // SortOrder defines ascending or descending order.

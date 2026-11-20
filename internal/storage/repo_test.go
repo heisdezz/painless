@@ -125,6 +125,46 @@ func TestAlbumMerge(t *testing.T) {
 	}
 }
 
+func TestMediaRepoSortByAdded(t *testing.T) {
+	db, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory failed: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewMediaRepo(db)
+	ctx := context.Background()
+
+	now := time.Now().UTC()
+	items := []domain.MediaItem{
+		{FileHash: "a", OriginalRelativePath: "photos/a.jpg", CurrentRelativePath: "photos/a.jpg", FileSize: 1, MimeType: "image/jpeg", CreatedAt: now},
+		{FileHash: "b", OriginalRelativePath: "photos/b.jpg", CurrentRelativePath: "photos/b.jpg", FileSize: 2, MimeType: "image/jpeg", CreatedAt: now.Add(-2 * time.Hour)},
+		{FileHash: "c", OriginalRelativePath: "photos/c.jpg", CurrentRelativePath: "photos/c.jpg", FileSize: 3, MimeType: "image/jpeg", CreatedAt: now.Add(-time.Hour)},
+	}
+	if _, err := repo.InsertBatch(ctx, items); err != nil {
+		t.Fatalf("InsertBatch failed: %v", err)
+	}
+
+	page, err := repo.List(ctx, domain.MediaListParams{
+		Limit:     10,
+		SortBy:    domain.SortByAdded,
+		SortOrder: domain.SortOrderDesc,
+	})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(page.Items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(page.Items))
+	}
+	// Newest by insertion: c, b, a — even though a has the newest created_at.
+	want := []string{"photos/c.jpg", "photos/b.jpg", "photos/a.jpg"}
+	for i, item := range page.Items {
+		if item.CurrentRelativePath != want[i] {
+			t.Errorf("item %d = %q, want %q", i, item.CurrentRelativePath, want[i])
+		}
+	}
+}
+
 func TestMediaRepoQueryAndPagination(t *testing.T) {
 	db, err := OpenMemory()
 	if err != nil {
