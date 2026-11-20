@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -384,5 +385,85 @@ func TestExecuteResolvesNameOnlyAlbums(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(driveRoot, "albums", "Fresh", "fresh.png")); err != nil {
 		t.Errorf("file should be moved into albums/Fresh: %v", err)
+	}
+}
+
+func TestMoveFileNoReplace_CreatesWhenFree(t *testing.T) {
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "src.txt")
+	dst := filepath.Join(tempDir, "sub", "dst.txt")
+	content := []byte("no-replace placement")
+	if err := os.WriteFile(src, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveFileNoReplace(src, dst); err != nil {
+		t.Fatalf("MoveFileNoReplace failed: %v", err)
+	}
+	readBack, err := os.ReadFile(dst)
+	if err != nil || string(readBack) != string(content) {
+		t.Fatalf("dst read = %q, %v; want %q", readBack, err, content)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("source should be gone after the move")
+	}
+}
+
+func TestMoveFileNoReplace_ExistingDest(t *testing.T) {
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "src.txt")
+	dst := filepath.Join(tempDir, "dst.txt")
+	srcContent, dstContent := []byte("src content"), []byte("existing dest")
+	if err := os.WriteFile(src, srcContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, dstContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := MoveFileNoReplace(src, dst)
+	if !errors.Is(err, ErrDestinationExists) {
+		t.Fatalf("MoveFileNoReplace err = %v, want ErrDestinationExists", err)
+	}
+	// Both contents remain intact: the destination was not replaced and
+	// the source was not consumed.
+	if got, err := os.ReadFile(dst); err != nil || string(got) != string(dstContent) {
+		t.Errorf("dst after failed move = %q, %v; want %q", got, err, dstContent)
+	}
+	if got, err := os.ReadFile(src); err != nil || string(got) != string(srcContent) {
+		t.Errorf("src after failed move = %q, %v; want %q", got, err, srcContent)
+	}
+}
+
+func TestMoveFileNoReplace_CompetingDestination(t *testing.T) {
+	// Simulates the ResolveCollision → competing creation → move race: the
+	// resolved name is claimed by another writer between resolution and
+	// placement; the move must fail with the explicit error while both
+	// files stay intact.
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "src.txt")
+	if err := os.WriteFile(src, []byte("src content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, isDup, err := ResolveCollision(filepath.Join(tempDir, "target.txt"), "")
+	if err != nil || isDup || resolved != filepath.Join(tempDir, "target.txt") {
+		t.Fatalf("ResolveCollision = %q, %v, %v; want free target, false, nil", resolved, isDup, err)
+	}
+
+	// A competing operation creates the destination after resolution.
+	competing := []byte("competing content")
+	if err := os.WriteFile(resolved, competing, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveFileNoReplace(src, resolved); !errors.Is(err, ErrDestinationExists) {
+		t.Fatalf("MoveFileNoReplace err = %v, want ErrDestinationExists", err)
+	}
+	if got, err := os.ReadFile(resolved); err != nil || string(got) != string(competing) {
+		t.Errorf("destination = %q, %v; want competing content %q", got, err, competing)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("source should still exist: %v", err)
 	}
 }

@@ -535,14 +535,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-FILEOPS-NOREPLACE: Make Destination Collision Handling Race-Safe
 
-- Status: in_progress
+- Status: done
 - Owner: [agent-fixer]
-- Updated: 2026-11-20T19:22:00Z
+- Updated: 2026-11-20T19:55:00Z
 - Depends on: LOGIC-FILE-STAGING
 - Allowed paths/scope: `internal/fileops/naming.go`, `internal/fileops/move.go`, `internal/fileops/*_test.go`, `internal/server/mobile/handlers_upload.go`, `internal/server/mobile/upload_test.go`
 - Acceptance: file placement never overwrites a pre-existing destination when concurrent upload/staging operations race after collision resolution; collisions are retried or returned as explicit errors; tests exercise a competing destination creation and verify both file contents remain intact.
 - Notes:
   - 2026-11-20: Review follow-up. `ResolveCollision` and `MoveFile` have a check/use gap, and `os.Rename` may replace an existing destination on supported platforms.
+  - 2026-11-20T19:55:00Z: Done by [agent-fixer]. New `fileops.MoveFileNoReplace` — on Linux it uses `unix.Renameat2(RENAME_NOREPLACE)` (atomic, fails `os.ErrExist`); on other platforms it pre-checks the destination and otherwise falls through to `copyAndVerifyMove`, which already creates the destination with `os.O_EXCL` (now mapped to `ErrDestinationExists`). New `fileops.ErrDestinationExists`. Callers: staging `Execute` moves with `MoveFileNoReplace` and surfaces the explicit error on a race; the mobile upload handler retries the whole `ResolveCollision`+move loop (`maxUploadPlacementAttempts = 8`) on `ErrDestinationExists`. Tests: `TestMoveFileNoReplace_CreatesWhenFree`, `TestMoveFileNoReplace_ExistingDest`, `TestMoveFileNoReplace_CompetingDestination` (simulates the ResolveCollision → competing creation → move race; both files verified intact). Full suite, `go vet`, gofmt green; commit 16aa934.
 
 #### LOGIC-MEDIA-HASH-UNIQUENESS: Enforce Library Content-Deduplication Invariant
 
@@ -680,3 +681,4 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-20T19:22:00Z [agent-fixer] Phase 9 claimed: LOGIC-STAGING-CONSISTENCY, LOGIC-FILEOPS-NOREPLACE, LOGIC-MEDIA-HASH-UNIQUENESS, LOGIC-THUMBNAIL-PIXEL-LIMIT, LOGIC-MEDIA-SEARCH-SCALING. (LOGIC-SCANNER-WRITE-FAILURES already claimed by [zed-agent (GPT-6 luna)].)
 - 2026-11-20T19:31:00Z [agent-fixer] LOGIC-THUMBNAIL-PIXEL-LIMIT: Done. decodeImage bounds full-resolution allocation via DecodeConfig + ErrOversizedImage (16 MP default); tests TestDecodeImageOversizedRejected/TestDecodeImageNormal; suite green; commit ffb3423.
 - 2026-11-20T19:45:00Z [agent-fixer] LOGIC-MEDIA-SEARCH-SCALING: Done. Migration v2 adds FTS5 trigram index media_items_fts + sync triggers + backfill; List searches ≥3 chars via ftsMatchQuery MATCH, shorter via LIKE fallback; tests TestMediaRepoSearchIndexed, benchmarks BenchmarkMediaRepoSearchPath/Metadata (10k rows); suite, vet, gofmt green; commit 8e33d7a.
+- 2026-11-20T19:45:10Z [agent-fixer] Correction: the LOGIC-MEDIA-SEARCH-SCALING activity line above cites the short pre-commit hash 8e33d7a; the landed commit is 4c6dca8.

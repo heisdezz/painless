@@ -3,11 +3,17 @@ package fileops
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 )
+
+// ErrDestinationExists is returned by MoveFileNoReplace when the
+// destination already exists, or a concurrent operation created it after
+// ResolveCollision — placement must never overwrite it.
+var ErrDestinationExists = errors.New("destination already exists")
 
 // MoveFile moves a file from src to dst.
 // It first attempts an atomic os.Rename. If that fails (such as across different mount points
@@ -55,6 +61,9 @@ func copyAndVerifyMove(src, dst string, srcInfo os.FileInfo) error {
 	// Create destination file exclusively to avoid accidental overwrites
 	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, srcInfo.Mode())
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%w: %s", ErrDestinationExists, dst)
+		}
 		return fmt.Errorf("failed to open destination for write %s: %w", dst, err)
 	}
 
@@ -96,11 +105,49 @@ func copyAndVerifyMove(src, dst string, srcInfo os.FileInfo) error {
 		return fmt.Errorf("checksum verification failed: src=%s, dst=%s (err: %v)", srcChecksum, dstChecksum, hashErr)
 	}
 
-	// Verification succeeded; remove source
+	// Verify verification succeeded; remove source
 	srcFile.Close()
 	if remErr := os.Remove(src); remErr != nil {
 		return fmt.Errorf("file copied to %s, but failed removing original %s: %w", dst, src, remErr)
 	}
 
+	return nil
+}
+
+// MoveFileNoReplace moves a file from src to dst without ever replacing an
+// existing destination: it returns ErrDestinationExists when dst exists or
+// was created concurrently between ResolveCollision and the move. The
+// exclusive-create copy fallback makes the placement race-safe on every
+// platform.
+func MoveFileNoReplace(src, dst string) error {
+	cleanSrc := filepath.Clean(src)
+	cleanDst := filepath.Clean(dst)
+
+	if cleanSrc == cleanDst {
+		return nil
+	}
+
+	srcInfo, err := os.Stat(cleanSrc)
+	if err != nil {
+		return fmt.Errorf("source file does not exist %s: %w", cleanSrc, err)
+	}
+	if srcInfo.IsDir() {
+		return fmt.Errorf("source is a directory, not a file: %s", cleanSrc)
+	}
+
+	// Ensure destination directory exists
+	dstDir := filepath.Dir(cleanDst)
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory %s: %w", dstDir, err)
+	}
+
+	if err := renameNoReplace(cleanSrc, cleanDst); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("%w: %s", ErrDestinationExists, cleanDst)
+		}
+		// Other rename errors (e.g. cross-device) fall through to the
+		// exclusive-create copy path.
+		return copyAndVerifyMove(cleanSrc, cleanDst, srcInfo)
+	}
 	return nil
 }

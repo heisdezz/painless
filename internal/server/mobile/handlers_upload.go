@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -21,6 +22,10 @@ import (
 
 // warmTimeout bounds background thumbnail generation for uploads.
 const warmTimeout = 2 * time.Minute
+
+// maxUploadPlacementAttempts bounds retries when a concurrent operation
+// creates the resolved upload destination after collision resolution.
+const maxUploadPlacementAttempts = 8
 
 // uploadResponse is the POST /api/upload result payload.
 type uploadResponse struct {
@@ -226,11 +231,35 @@ func (s *Server) persistUpload(r *http.Request, root string, src io.Reader, file
 		removeTmp()
 		return nil, false, err
 	}
+	if !diskDup {
+		// Race-safe placement: retry when a concurrent upload or stager
+		// creates the resolved destination between resolution and the move.
+		placed := false
+		for attempt := 0; attempt < maxUploadPlacementAttempts && !placed; attempt++ {
+			err := fileops.MoveFileNoReplace(tmpName, finalPath)
+			switch {
+			case err == nil:
+				placed = true
+			case errors.Is(err, fileops.ErrDestinationExists):
+				// A concurrent operation created the resolved path after
+				// ResolveCollision; resolve again and retry.
+				finalPath, diskDup, err = fileops.ResolveCollision(filepath.Join(destDir, filename), hash)
+				if err != nil {
+					removeTmp()
+					return nil, false, err
+				}
+			default:
+				removeTmp()
+				return nil, false, err
+			}
+		}
+		if !placed && !diskDup {
+			removeTmp()
+			return nil, false, fmt.Errorf("could not place upload %q without overwriting an existing destination", filepath.Base(finalPath))
+		}
+	}
 	if diskDup {
 		removeTmp()
-	} else if err := fileops.MoveFile(tmpName, finalPath); err != nil {
-		removeTmp()
-		return nil, false, err
 	}
 
 	rel, err := filepath.Rel(root, finalPath)

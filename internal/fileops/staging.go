@@ -308,7 +308,7 @@ func (e *StagingEngine) Execute(
 				// Destination identical file exists; safely remove source
 				_ = os.Remove(srcAbs)
 			} else if finalDestAbs != srcAbs {
-				moveErr = MoveFile(srcAbs, finalDestAbs)
+				moveErr = MoveFileNoReplace(srcAbs, finalDestAbs)
 			}
 
 			if moveErr != nil {
