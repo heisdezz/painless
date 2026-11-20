@@ -192,6 +192,18 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 	s.progress = Progress{IsRunning: true}
 	s.mu.Unlock()
 
+	pauseWaitDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			s.pauseCond.Broadcast()
+			s.mu.Unlock()
+		case <-pauseWaitDone:
+		}
+	}()
+	defer close(pauseWaitDone)
+
 	s.seenMu.Lock()
 	s.seenHashes = make(map[string]bool)
 	s.seenMu.Unlock()
@@ -217,7 +229,7 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 
 	jobs := make(chan string, s.config.WorkerCount*16)
 	results := make(chan domain.MediaItem, s.config.BatchSize*2)
-	errChan := make(chan error, 1)
+	var writerErr error
 
 	var wgWorkers sync.WaitGroup
 	var wgWriter sync.WaitGroup
@@ -231,15 +243,13 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 		defer ticker.Stop()
 
 		flush := func() {
-			if len(batch) == 0 {
+			if len(batch) == 0 || writerErr != nil || ctx.Err() != nil {
 				return
 			}
 			if s.inserter != nil {
 				if err := s.inserter.InsertBatch(ctx, batch); err != nil {
-					select {
-					case errChan <- fmt.Errorf("failed writing batch to DB: %w", err):
-					default:
-					}
+					writerErr = fmt.Errorf("failed writing batch of %d media items to DB: %w", len(batch), err)
+					s.Stop()
 				}
 			}
 			batch = batch[:0]
@@ -248,7 +258,10 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 		for {
 			select {
 			case <-ctx.Done():
-				flush()
+				// Keep draining until workers exit so no result sender can remain
+				// blocked, whether cancellation came from a write failure or caller.
+				for range results {
+				}
 				return
 			case item, ok := <-results:
 				if !ok {
@@ -333,13 +346,14 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 	close(results)
 	wgWriter.Wait()
 
-	select {
-	case err := <-errChan:
-		return err
-	default:
+	if writerErr != nil {
+		return writerErr
 	}
 
-	if walkErr != nil && walkErr != context.Canceled {
+	if err := parentCtx.Err(); err != nil {
+		return err
+	}
+	if walkErr != nil {
 		return walkErr
 	}
 

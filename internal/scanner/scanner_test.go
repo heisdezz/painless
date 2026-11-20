@@ -3,6 +3,8 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -50,6 +52,15 @@ func (m *mockInserter) GetByHash(ctx context.Context, hash string) (*domain.Medi
 		return nil, nil
 	}
 	return &item, nil
+}
+
+type failingInserter struct {
+	*mockInserter
+	err error
+}
+
+func (m *failingInserter) InsertBatch(context.Context, []domain.MediaItem) error {
+	return m.err
 }
 
 func TestIgnoreRules(t *testing.T) {
@@ -140,6 +151,101 @@ func TestMetadataExtraction(t *testing.T) {
 	}
 	if metaJSON == "" || metaJSON == "{}" {
 		t.Errorf("expected non-empty JSON metadata, got %s", metaJSON)
+	}
+}
+
+func TestScannerStopsOnBatchWriteFailure(t *testing.T) {
+	driveRoot := t.TempDir()
+	imgPath := filepath.Join(driveRoot, "photo.png")
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 10, 10))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imgPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	writeErr := errors.New("database unavailable")
+	inserter := &failingInserter{mockInserter: newMockInserter(), err: writeErr}
+	scanner := New(Config{DriveRoot: driveRoot, WorkerCount: 1, BatchSize: 1}, inserter, nil)
+
+	err := scanner.Scan(context.Background())
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("Scan error = %v, want wrapped write error", err)
+	}
+	if got := scanner.Status(); got.IsRunning || got.MediaFound != 1 {
+		t.Errorf("final scan status = %+v, want stopped after discovering the failed item", got)
+	}
+	if got := len(inserter.items); got != 0 {
+		t.Errorf("persisted items = %d, want none after failed batch", got)
+	}
+}
+
+func TestScannerReturnsParentContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	scanner := New(Config{DriveRoot: t.TempDir(), WorkerCount: 1, BatchSize: 1}, newMockInserter(), nil)
+	if err := scanner.Scan(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Scan error = %v, want context.Canceled", err)
+	}
+}
+
+func TestScannerCancellationWhilePaused(t *testing.T) {
+	driveRoot := t.TempDir()
+	for i := 0; i < 20; i++ {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(driveRoot, fmt.Sprintf("photo-%02d.png", i)), buf.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pauseRequested := make(chan struct{})
+	var scanner *Scanner
+	scanner = New(Config{DriveRoot: driveRoot, WorkerCount: 1, BatchSize: 1}, newMockInserter(), func(p Progress) {
+		if p.MediaFound == 1 {
+			select {
+			case <-pauseRequested:
+			default:
+				close(pauseRequested)
+				go scanner.Pause()
+			}
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- scanner.Scan(ctx) }()
+
+	select {
+	case <-pauseRequested:
+	case <-time.After(time.Second):
+		t.Fatal("scanner did not discover media")
+	}
+	deadline := time.After(time.Second)
+	for !scanner.Status().IsPaused {
+		select {
+		case err := <-done:
+			t.Fatalf("scan returned before reaching paused state: %v", err)
+		case <-deadline:
+			t.Fatal("scanner did not pause")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Scan error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("scan did not exit after cancellation while paused")
 	}
 }
 
