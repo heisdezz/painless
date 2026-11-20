@@ -15,16 +15,8 @@ import (
 )
 
 func (s *Screen) stagingTable(c *mui.Context, tk *lobetheme.Tokens) {
+	// With nothing staged the table area is simply empty; no empty state.
 	if len(s.stagedOps) == 0 {
-		mui.Scroll(c).Grow(1).Basis(0).Children(func() {
-			mui.Column(c).Fill().Center().Padding(48).Children(func() {
-				display.Empty(c, display.EmptyProps{
-					Icon:        lucide.ScanSearch(),
-					Title:       "No media staged",
-					Description: "Items discovered during filesystem scans will be listed here for consolidation.",
-				})
-			})
-		})
 		return
 	}
 
