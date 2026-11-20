@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/state"
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 // Options configures a Service. Zero values get sensible defaults.
 type Options struct {
 	DriveRoot      string
+	Store          *state.Store // gates Get when the user disables thumbnails
 	FFmpeg         string
 	MaxDimension   int
 	Quality        int
@@ -85,6 +87,9 @@ func (s *Service) CacheRoot() string { return s.disk.root }
 
 // Get returns WebP bytes for item, generating and caching them if needed.
 func (s *Service) Get(ctx context.Context, item domain.MediaItem) ([]byte, error) {
+	if s.opts.Store != nil && !s.opts.Store.ThumbnailsEnabled() {
+		return nil, nil
+	}
 	if item.FileHash == "" {
 		return nil, ErrNoHash
 	}

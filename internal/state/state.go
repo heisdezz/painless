@@ -16,22 +16,38 @@ import (
 type AppState struct {
 	mu sync.RWMutex
 
-	screen    Screen
-	prev      Screen // screen active before the current one, used by BackScreen
-	drives    []domain.DriveInfo
-	activeID  string // domain.DriveInfo.ID of the active drive, "" if none
-	selection Selection
-	jobs      map[string]*Job
-	jobOrder  []string
+	screen     Screen
+	prev       Screen // screen active before the current one, used by BackScreen
+	drives     []domain.DriveInfo
+	activeID   string // domain.DriveInfo.ID of the active drive, "" if none
+	selection  Selection
+	jobs       map[string]*Job
+	jobOrder   []string
+	thumbnails bool
 }
 
 // New creates an initialized AppState with the catalog screen active.
 func New() *AppState {
 	return &AppState{
-		screen:    ScreenDashboard,
-		selection: NewSelection(),
-		jobs:      map[string]*Job{},
+		screen:     ScreenDashboard,
+		selection:  NewSelection(),
+		jobs:       map[string]*Job{},
+		thumbnails: true,
 	}
+}
+
+// ThumbnailsEnabled reports whether media thumbnails are displayed.
+func (s *AppState) ThumbnailsEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.thumbnails
+}
+
+// SetThumbnailsEnabled toggles the display of media thumbnails.
+func (s *AppState) SetThumbnailsEnabled(enabled bool) {
+	s.mu.Lock()
+	s.thumbnails = enabled
+	s.mu.Unlock()
 }
 
 // Screen returns the currently displayed navigation screen.

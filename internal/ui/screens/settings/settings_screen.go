@@ -15,6 +15,7 @@ import (
 
 	"painless/internal/domain"
 	"painless/internal/logging"
+	"painless/internal/state"
 )
 
 // BackupsController serves the backup tab. App wiring satisfies it with
@@ -81,6 +82,8 @@ type Options struct {
 	Logs    *logging.Logger
 	// Toast raises a notification through the shell's toaster. Optional.
 	Toast func(level domain.LogLevel, title, body string)
+	// Store backs the General tab's system-wide display switches.
+	Store *state.Store
 }
 
 // Screen owns the settings tab and draft-input state. All fields are
@@ -96,6 +99,11 @@ type Screen struct {
 	tab         int
 	integrity   string
 	integrityOK bool
+
+	// General tab state.
+	store        *state.Store
+	thumbsOn     bool
+	thumbsLastOn bool
 
 	// mobile tab drafts, synced to the controller in syncMobile.
 	serverOn   bool
@@ -154,6 +162,11 @@ func New(opts Options) *Screen {
 		gdrive:  opts.GDrive,
 		logs:    opts.Logs,
 		toast:   opts.Toast,
+		store:   opts.Store,
+	}
+	if s.store != nil {
+		s.thumbsOn = s.store.ThumbnailsEnabled()
+		s.thumbsLastOn = s.thumbsOn
 	}
 	if s.mobile != nil {
 		s.serverOn = s.mobile.Enabled()
@@ -174,6 +187,7 @@ var tabItems = []nav.TabItem{
 	{Label: "Mobile sync", Icon: lucide.Smartphone()},
 	{Label: "Google Drive", Icon: lucide.CloudUpload()},
 	{Label: "Logs", Icon: lucide.ScrollText()},
+	{Label: "General", Icon: lucide.SlidersHorizontal()},
 }
 
 // View builds one frame of the settings screen.
@@ -181,6 +195,7 @@ func (s *Screen) View(c *mui.Context) {
 	tk := lobetheme.TokensOf(c)
 	s.drainAsync()
 	s.syncMobile()
+	s.syncThumbnails()
 	mui.Column(c).Fill().Padding(0, 28, 40).Gap(16).Children(func() {
 		mui.Box(c).Height(1).FillWidth().Background(tk.Border)
 		nav.Tabs(c, &s.tab, nav.TabsProps{
@@ -197,6 +212,8 @@ func (s *Screen) View(c *mui.Context) {
 				s.gdriveTab(c)
 			case 3:
 				s.logsTab(c)
+			case 4:
+				s.generalTab(c)
 			}
 		})
 	})

@@ -59,7 +59,7 @@ func New(store *state.Store) *Shell {
 		dashboard:   dashboard.New(dashboard.Options{}),
 		discover:    discover.New(discover.Options{Store: store}),
 		logger:      logger,
-		settings:    settings.New(settings.Options{Logs: logger, Toast: store.Notify}),
+		settings:    settings.New(settings.Options{Logs: logger, Toast: store.Notify, Store: store}),
 		viewer:      newViewer(store, nil, "", nil, nil),
 		albums:      albums.New(albums.Options{}),
 		navWidth:    220,

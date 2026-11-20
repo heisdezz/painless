@@ -19,7 +19,24 @@ import (
 	"golang.org/x/image/webp"
 
 	"painless/internal/domain"
+	"painless/internal/state"
 )
+
+func TestServiceGetThumbnailsDisabled(t *testing.T) {
+	store := state.NewStore()
+	store.SetThumbnailsEnabled(false)
+	svc := New(Options{Store: store})
+	defer svc.Close()
+
+	item := domain.MediaItem{FileHash: "a", CurrentRelativePath: "photos/a.jpg", MimeType: "image/jpeg", FileSize: 100}
+	data, err := svc.Get(context.Background(), item)
+	if err != nil {
+		t.Fatalf("Get err = %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("Get returned %d bytes with thumbnails disabled, want none", len(data))
+	}
+}
 
 func writeTestJPEG(t testing.TB, path string, width, height int) {
 	t.Helper()

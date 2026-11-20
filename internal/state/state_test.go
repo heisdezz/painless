@@ -457,3 +457,18 @@ func TestBackScreen(t *testing.T) {
 		t.Fatalf("back screen after returning = %q, want viewer", got)
 	}
 }
+
+func TestThumbnailsEnabledToggle(t *testing.T) {
+	st := NewStore()
+	if !st.ThumbnailsEnabled() {
+		t.Error("ThumbnailsEnabled = false on a new store, want true")
+	}
+	st.SetThumbnailsEnabled(false)
+	if st.ThumbnailsEnabled() {
+		t.Error("ThumbnailsEnabled = true after SetThumbnailsEnabled(false)")
+	}
+	st.SetThumbnailsEnabled(true)
+	if !st.ThumbnailsEnabled() {
+		t.Error("ThumbnailsEnabled = false after SetThumbnailsEnabled(true)")
+	}
+}

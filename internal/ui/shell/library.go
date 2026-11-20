@@ -141,7 +141,7 @@ func (l *libraryController) sync() {
 		l.shell.toaster.Error("Could not open library", err.Error())
 		return
 	}
-	thumbs := thumbnail.New(thumbnail.Options{DriveRoot: drive.Path})
+	thumbs := thumbnail.New(thumbnail.Options{DriveRoot: drive.Path, Store: l.store})
 	mediaRepo, albumRepo := storage.NewMediaRepo(db), storage.NewAlbumRepo(db)
 	l.db, l.thumbs, l.drive, l.root = db, thumbs, drive.ID, libraryRoot
 

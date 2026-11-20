@@ -11,6 +11,7 @@ import (
 
 	"painless/internal/domain"
 	"painless/internal/logging"
+	"painless/internal/state"
 )
 
 type fakeBackups struct {
@@ -498,5 +499,33 @@ func TestFormatBytes(t *testing.T) {
 		if got := formatBytes(tc.in); got != tc.want {
 			t.Errorf("formatBytes(%d) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestGeneralTabTogglesThumbnails(t *testing.T) {
+	store := state.NewStore()
+	tt := mui.NewTester(New(Options{Store: store}).View, 1000, 800)
+	if !tt.HasText("General") {
+		t.Fatalf("general tab texts = %q", tt.Texts())
+	}
+
+	if err := tt.Click("General"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+
+	if !tt.HasText("Display thumbnails") {
+		t.Fatalf("missing switch label; texts = %q", tt.Texts())
+	}
+
+	info, ok := tt.AccessByRole(mui.RoleSwitch, "")
+	if !ok {
+		t.Fatalf("no switch rendered; texts = %q", tt.Texts())
+	}
+	tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Frame()
+
+	if store.ThumbnailsEnabled() {
+		t.Fatal("ThumbnailsEnabled = true after clicking the switch, want false")
 	}
 }

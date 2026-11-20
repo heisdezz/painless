@@ -21,6 +21,12 @@ func NewStore() *Store {
 // Selections exposes the selection store for direct read/mutation.
 func (st *Store) Selections() *Selection { return &st.State.selection }
 
+// ThumbnailsEnabled reports whether media thumbnails are displayed.
+func (st *Store) ThumbnailsEnabled() bool { return st.State.ThumbnailsEnabled() }
+
+// SetThumbnailsEnabled toggles the display of media thumbnails.
+func (st *Store) SetThumbnailsEnabled(enabled bool) { st.State.SetThumbnailsEnabled(enabled) }
+
 // ApplyDrives replaces the drive list and publishes EventDrivesChanged,
 // plus EventActiveDriveChange when the active drive changed (including
 // fallback selection after the active drive was removed).
