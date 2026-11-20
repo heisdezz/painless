@@ -524,14 +524,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-STAGING-CONSISTENCY: Keep Filesystem and Library State Consistent
 
-- Status: in_progress
+- Status: done
 - Owner: [agent-fixer]
-- Updated: 2026-11-20T19:22:00Z
+- Updated: 2026-11-20T19:58:00Z
 - Depends on: LOGIC-FILE-STAGING, LOGIC-MEDIA-REPO
 - Allowed paths/scope: `internal/fileops/staging.go`, `internal/fileops/staging_test.go`, `internal/storage/media_repo.go` (transactional operation support only)
 - Acceptance: staging execution does not report an operation as done when required database updates fail; file moves/deletes and metadata updates expose partial failures for recovery; rollback restores both the original path and album assignment; tests cover move/delete DB failures and rollback of album state.
 - Notes:
   - 2026-11-20: Review follow-up. `Execute` currently ignores delete and album-assignment errors, and can mark a move done after a path update failure. Design recoverable behavior for filesystem/DB partial commits before implementation.
+  - 2026-11-20T19:58:00Z: Done by [agent-fixer]. `Execute` move case: DB failures (`UpdatePath`, `MoveToAlbum`/`RemoveFromAlbum`) now mark the op `StageStatusFailed` with an error message, count it as failed, and expose the failure in `report.Errors`; `JournalEntry.OldAlbumID` records the media's pre-move album, and `Rollback` now restores the album assignment (`MoveToAlbum(*OldAlbumID)` or `RemoveFromAlbum`) in addition to the file and `UpdatePath`. Delete case: `DeleteBatch` failures mark the op failed with the error exposed. `MediaStore` interface gains `GetByID` (already on `*storage.MediaRepo`). Tests: `TestExecuteMoveDBFailureNotDoneAndRollbackRestores` (mock `failUpdate`; asserts FailedCount 1, MovedCount 0, op failed with message, and that Rollback restores the original path and album) and `TestExecuteDeleteDBFailureNotDone` (mock `failDelete`); mock gains `failUpdate`/`failDelete`/`GetByID`. Full fileops suite, `go vet`, gofmt green; commit 0a4e51b (lands next).
 
 #### LOGIC-FILEOPS-NOREPLACE: Make Destination Collision Handling Race-Safe
 
@@ -592,6 +593,22 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - Notes:
   - 2026-11-20: Review follow-up. `MediaRepo.List` performs `%term%` matching over paths and metadata JSON, which does not use ordinary B-tree indexes and may become expensive as libraries grow.
   - 2026-11-20T19:45:00Z: Done by [agent-fixer]. Migration v2 adds an FTS5 virtual table `media_items_fts` (trigram tokenizer: case-insensitive substring matching over `current_relative_path` + `metadata_json`) with AFTER INSERT/UPDATE/DELETE triggers on `media_items` and a backfill of existing rows. `MediaRepo.List` routes searches of ≥3 chars (`ftsMatchQuery` quotes the string as one FTS5 phrase; `"` escaped as `""`) through `rowid IN (SELECT rowid FROM media_items_fts WHERE media_items_fts MATCH ?)`; shorter searches keep the old `LIKE` fallback since trigram only matches 3+ char terms. Tests: `TestMediaRepoSearchIndexed` (path substring, long path substring, metadata substring, case-insensitive, no match, short-term LIKE fallback) over a real FTS-backed catalog; benchmarks `BenchmarkMediaRepoSearchPath` (37.4ms/op @10k rows) and `BenchmarkMediaRepoSearchMetadata` (6.0ms/op). Full storage suite green; `go vet`, gofmt clean. Commit 8e33d7a.
+
+---
+
+### Phase 10: UI Follow-ups
+
+#### UI-GENERAL-THUMBS-TOGGLE: Honor the Display-Thumbnails Switch on Render Paths
+
+- Status: in_progress
+- Owner: zed-agent (GPT-6 luna)
+- Updated: 2026-11-20T19:52:00Z
+- Depends on: LOGIC-THUMBNAIL, PHASE7B-SETTINGS (General tab)
+- Allowed paths/scope: `internal/ui/screens/catalog/**`, `internal/ui/screens/albums/albums.go`, `internal/ui/screens/dashboard/**`, `internal/ui/shell/**`, `docs/implementation/progress.md`
+- Acceptance: toggling Settings → General → "Display thumbnails" off hides preview images on catalog, dashboard and album screens (not just stops new generation), and toggling it back on restores them; screens stop scheduling thumbnail fetch workers while disabled; regression tests cover the hidden-while-disabled and restored-when-enabled behavior.
+- Notes:
+  - 2026-11-20: User report. The switch writes `store.SetThumbnailsEnabled` correctly (settings test passes) and `thumbnail.Service.Get` returns empty when disabled, but catalog/albums/dashboard `bitmapFor` caches serve already-decoded bitmaps without consulting the flag, so rendered thumbnails never disappear; disabled state also respawns fetch workers every frame on empty results.
+  - 2026-11-20T19:52:00Z: Claimed by zed-agent (GPT-6 luna). Plan: add a thumbs-enabled predicate to catalog/albums/dashboard options, guard `bitmapFor` on it, wire the store method value from shell/library controllers, and add regression tests.
 
 ---
 
@@ -682,3 +699,7 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-20T19:31:00Z [agent-fixer] LOGIC-THUMBNAIL-PIXEL-LIMIT: Done. decodeImage bounds full-resolution allocation via DecodeConfig + ErrOversizedImage (16 MP default); tests TestDecodeImageOversizedRejected/TestDecodeImageNormal; suite green; commit ffb3423.
 - 2026-11-20T19:45:00Z [agent-fixer] LOGIC-MEDIA-SEARCH-SCALING: Done. Migration v2 adds FTS5 trigram index media_items_fts + sync triggers + backfill; List searches ≥3 chars via ftsMatchQuery MATCH, shorter via LIKE fallback; tests TestMediaRepoSearchIndexed, benchmarks BenchmarkMediaRepoSearchPath/Metadata (10k rows); suite, vet, gofmt green; commit 8e33d7a.
 - 2026-11-20T19:45:10Z [agent-fixer] Correction: the LOGIC-MEDIA-SEARCH-SCALING activity line above cites the short pre-commit hash 8e33d7a; the landed commit is 4c6dca8.
+- 2026-11-20T19:58:26Z [zed-agent (GPT-6 luna)] LOGIC-SCANNER-WRITE-FAILURES: committed remaining scanner changes as b1cb3f5 (task block updates had already landed); fix(scanner): propagate persistence failures and stop discovery.
+- 2026-11-20T19:58:26Z [zed-agent (GPT-6 luna)] UI-GENERAL-THUMBS-TOGGLE: Claimed (in_progress); guarding bitmapFor render paths on the store flag across catalog/albums/dashboard and wiring the predicate from the shell.
+- 2026-11-20T19:55:30Z [agent-fixer] Correction: the LOGIC-FILEOPS-NOREPLACE note above cites the short pre-commit hash 16aa934; the landed commit is aebf75e.
+- 2026-11-20T19:55:30Z [agent-fixer] LOGIC-FILEOPS-NOREPLACE: Done. MoveFileNoReplace (renameat2 RENAME*NOREPLACE on Linux, O_EXCL copy fallback elsewhere) + ErrDestinationExists; staging + upload retry on collision; TestMoveFileNoReplace*\* tests; suite/vet/gofmt green; commit aebf75e.

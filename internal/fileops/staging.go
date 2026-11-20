@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type MediaStore interface {
 	MoveToAlbum(ctx context.Context, targetAlbumID int64, mediaIDs []int64) (int64, error)
 	RemoveFromAlbum(ctx context.Context, mediaIDs []int64) (int64, error)
 	DeleteBatch(ctx context.Context, mediaIDs []int64) (int64, error)
+	GetByID(ctx context.Context, id int64) (*domain.MediaItem, error)
 }
 
 // AlbumStore provides album metadata lookups and name-based creation so
@@ -34,9 +36,12 @@ type JournalEntry struct {
 	NewDestPath     string
 	OldRelativePath string
 	NewRelativePath string
-	TargetAlbumID   *int64
-	Action          domain.StageAction
-	ExecutedAt      time.Time
+	// OldAlbumID is the media's album assignment before the move; nil means
+	// it had no album, so rollback clears the assignment.
+	OldAlbumID    *int64
+	TargetAlbumID *int64
+	Action        domain.StageAction
+	ExecutedAt    time.Time
 }
 
 // ExecutionReport details the outcome of a "Consolidate & Execute" run.
@@ -246,13 +251,24 @@ func (e *StagingEngine) Execute(
 				report.FailedCount++
 				report.Errors = append(report.Errors, fmt.Sprintf("failed deleting %s: %v", srcAbs, err))
 			} else {
+				// The file is gone now; the DB delete must not be reported
+				// as done when it fails, or the catalog keeps pointing at
+				// a missing file.
+				var dbErr error
 				if mediaStore != nil {
-					_, _ = mediaStore.DeleteBatch(ctx, []int64{op.MediaID})
+					_, dbErr = mediaStore.DeleteBatch(ctx, []int64{op.MediaID})
 				}
-				op.Status = domain.StageStatusDone
-				now := time.Now()
-				op.ExecutedAt = &now
-				report.DeletedCount++
+				if dbErr != nil {
+					op.Status = domain.StageStatusFailed
+					op.ErrorMessage = dbErr.Error()
+					report.FailedCount++
+					report.Errors = append(report.Errors, fmt.Sprintf("failed deleting DB record for media %d: %v", op.MediaID, dbErr))
+				} else {
+					op.Status = domain.StageStatusDone
+					now := time.Now()
+					op.ExecutedAt = &now
+					report.DeletedCount++
+				}
 			}
 
 		case domain.StageActionMove:
@@ -326,15 +342,46 @@ func (e *StagingEngine) Execute(
 			}
 			finalRelSlash := filepath.ToSlash(finalRel)
 
-			// 3. Update database
+			// 3. Update database. The file is on disk now; DB failures must
+			// not be reported as done — the journal entry lets Rollback
+			// restore the original path and album assignment.
+			var oldAlbumID *int64
 			if mediaStore != nil {
+				if item, itemErr := mediaStore.GetByID(ctx, op.MediaID); itemErr == nil && item != nil {
+					oldAlbumID = item.AlbumID
+				}
+			}
+			if mediaStore != nil {
+				var dbErrs []string
 				if updErr := mediaStore.UpdatePath(ctx, op.MediaID, finalRelSlash); updErr != nil {
-					report.Errors = append(report.Errors, fmt.Sprintf("failed updating DB path for media %d: %v", op.MediaID, updErr))
+					dbErrs = append(dbErrs, fmt.Sprintf("update path: %v", updErr))
 				}
 				if op.TargetAlbumID != nil {
-					_, _ = mediaStore.MoveToAlbum(ctx, *op.TargetAlbumID, []int64{op.MediaID})
+					if _, aErr := mediaStore.MoveToAlbum(ctx, *op.TargetAlbumID, []int64{op.MediaID}); aErr != nil {
+						dbErrs = append(dbErrs, fmt.Sprintf("move to album %d: %v", *op.TargetAlbumID, aErr))
+					}
 				} else {
-					_, _ = mediaStore.RemoveFromAlbum(ctx, []int64{op.MediaID})
+					if _, aErr := mediaStore.RemoveFromAlbum(ctx, []int64{op.MediaID}); aErr != nil {
+						dbErrs = append(dbErrs, fmt.Sprintf("remove from album: %v", aErr))
+					}
+				}
+				if len(dbErrs) > 0 {
+					op.Status = domain.StageStatusFailed
+					op.ErrorMessage = "database updates failed: " + strings.Join(dbErrs, "; ")
+					report.FailedCount++
+					report.Errors = append(report.Errors, fmt.Sprintf("move not done for media %d: %s", op.MediaID, strings.Join(dbErrs, "; ")))
+					e.journal = append(e.journal, JournalEntry{
+						MediaID:         op.MediaID,
+						OldSourcePath:   srcAbs,
+						NewDestPath:     finalDestAbs,
+						OldRelativePath: op.SourcePath,
+						NewRelativePath: finalRelSlash,
+						OldAlbumID:      oldAlbumID,
+						TargetAlbumID:   op.TargetAlbumID,
+						Action:          op.Action,
+						ExecutedAt:      time.Now(),
+					})
+					break
 				}
 			}
 
@@ -345,6 +392,7 @@ func (e *StagingEngine) Execute(
 				NewDestPath:     finalDestAbs,
 				OldRelativePath: op.SourcePath,
 				NewRelativePath: finalRelSlash,
+				OldAlbumID:      oldAlbumID,
 				TargetAlbumID:   op.TargetAlbumID,
 				Action:          op.Action,
 				ExecutedAt:      time.Now(),
@@ -389,6 +437,17 @@ func (e *StagingEngine) Rollback(ctx context.Context, driveRoot string, mediaSto
 		if mediaStore != nil {
 			if err := mediaStore.UpdatePath(ctx, entry.MediaID, entry.OldRelativePath); err != nil {
 				rollbackErrors = append(rollbackErrors, fmt.Errorf("failed reverting DB path for media %d: %w", entry.MediaID, err))
+			}
+			// Restore the album assignment that preceded the move; entries
+			// recorded without the old album clear the assignment instead.
+			if entry.OldAlbumID != nil {
+				if _, aErr := mediaStore.MoveToAlbum(ctx, *entry.OldAlbumID, []int64{entry.MediaID}); aErr != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("failed reverting album for media %d: %w", entry.MediaID, aErr))
+				}
+			} else {
+				if _, aErr := mediaStore.RemoveFromAlbum(ctx, []int64{entry.MediaID}); aErr != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("failed reverting album for media %d: %w", entry.MediaID, aErr))
+				}
 			}
 		}
 	}

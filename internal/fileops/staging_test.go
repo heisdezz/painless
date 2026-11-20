@@ -13,9 +13,11 @@ import (
 )
 
 type mockMediaStore struct {
-	paths   map[int64]string
-	albums  map[int64]int64
-	deleted map[int64]bool
+	paths      map[int64]string
+	albums     map[int64]int64
+	deleted    map[int64]bool
+	failUpdate bool
+	failDelete bool
 }
 
 func newMockMediaStore() *mockMediaStore {
@@ -27,8 +29,21 @@ func newMockMediaStore() *mockMediaStore {
 }
 
 func (m *mockMediaStore) UpdatePath(ctx context.Context, id int64, newPath string) error {
+	if m.failUpdate {
+		return errors.New("mock update path failure")
+	}
 	m.paths[id] = newPath
 	return nil
+}
+
+// GetByID returns the mock's current path and album assignment.
+func (m *mockMediaStore) GetByID(ctx context.Context, id int64) (*domain.MediaItem, error) {
+	item := &domain.MediaItem{ID: id, CurrentRelativePath: m.paths[id]}
+	if albumID, ok := m.albums[id]; ok {
+		albumID := albumID
+		item.AlbumID = &albumID
+	}
+	return item, nil
 }
 
 func (m *mockMediaStore) MoveToAlbum(ctx context.Context, targetAlbumID int64, mediaIDs []int64) (int64, error) {
@@ -46,6 +61,9 @@ func (m *mockMediaStore) RemoveFromAlbum(ctx context.Context, mediaIDs []int64) 
 }
 
 func (m *mockMediaStore) DeleteBatch(ctx context.Context, mediaIDs []int64) (int64, error) {
+	if m.failDelete {
+		return 0, errors.New("mock delete failure")
+	}
 	for _, id := range mediaIDs {
 		m.deleted[id] = true
 	}
@@ -465,5 +483,101 @@ func TestMoveFileNoReplace_CompetingDestination(t *testing.T) {
 	}
 	if _, err := os.Stat(src); err != nil {
 		t.Errorf("source should still exist: %v", err)
+	}
+}
+
+func TestExecuteMoveDBFailureNotDoneAndRollbackRestores(t *testing.T) {
+	driveRoot := t.TempDir()
+	ctx := context.Background()
+
+	incomingDir := filepath.Join(driveRoot, "incoming")
+	if err := os.MkdirAll(incomingDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	incoming := filepath.Join(incomingDir, "photo.jpg")
+	if err := os.WriteFile(incoming, []byte("photo data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	const mediaID = int64(101)
+	oldAlbumID := int64(7)
+	store := newMockMediaStore()
+	store.paths[mediaID] = "incoming/photo.jpg"
+	store.albums[mediaID] = oldAlbumID
+
+	albumStore := newMockAlbumStore()
+	albumStore.albums[42] = &domain.Album{ID: 42, Name: "Travel"}
+
+	var newAlbumID int64 = 42
+	engine := NewStagingEngine()
+	engine.StageMove(domain.MediaItem{ID: mediaID, FileHash: "h101", CurrentRelativePath: "incoming/photo.jpg"}, &newAlbumID, "Travel")
+
+	store.failUpdate = true
+	report, err := engine.Execute(ctx, driveRoot, store, albumStore, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if report.FailedCount != 1 {
+		t.Fatalf("FailedCount = %d, want 1 (a DB failure must not report the move done)", report.FailedCount)
+	}
+	if report.MovedCount != 0 {
+		t.Fatalf("MovedCount = %d, want 0", report.MovedCount)
+	}
+	if len(report.Errors) == 0 {
+		t.Fatal("expected the DB failure to be exposed in report.Errors")
+	}
+	op := engine.ListOperations()[0]
+	if op.Status != domain.StageStatusFailed || op.ErrorMessage == "" {
+		t.Fatalf("op = %+v, want failed with an error message", op)
+	}
+
+	// Rollback restores the file and the original album assignment.
+	store.failUpdate = false
+	if err := engine.Rollback(ctx, driveRoot, store); err != nil {
+		t.Fatalf("Rollback failed: %v", err)
+	}
+	if _, err := os.Stat(incoming); err != nil {
+		t.Errorf("file should be back at the original path after rollback: %v", err)
+	}
+	if got := store.albums[mediaID]; got != oldAlbumID {
+		t.Errorf("album after rollback = %d, want %d", got, oldAlbumID)
+	}
+}
+
+func TestExecuteDeleteDBFailureNotDone(t *testing.T) {
+	driveRoot := t.TempDir()
+	ctx := context.Background()
+
+	incomingDir := filepath.Join(driveRoot, "incoming")
+	if err := os.MkdirAll(incomingDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(incomingDir, "temp.txt")
+	if err := os.WriteFile(file, []byte("delete me"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := NewStagingEngine()
+	engine.StageDelete(domain.MediaItem{ID: 3, FileHash: "h3", CurrentRelativePath: "incoming/temp.txt"})
+
+	store := newMockMediaStore()
+	store.paths[3] = "incoming/temp.txt"
+	store.failDelete = true
+	report, err := engine.Execute(ctx, driveRoot, store, newMockAlbumStore(), nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if report.FailedCount != 1 {
+		t.Fatalf("FailedCount = %d, want 1 (a DB delete failure must not report done)", report.FailedCount)
+	}
+	if report.DeletedCount != 0 {
+		t.Fatalf("DeletedCount = %d, want 0", report.DeletedCount)
+	}
+	if len(report.Errors) == 0 {
+		t.Fatal("expected the DB failure to be exposed in report.Errors")
+	}
+	op := engine.ListOperations()[0]
+	if op.Status != domain.StageStatusFailed {
+		t.Fatalf("op status = %v, want failed", op.Status)
 	}
 }
