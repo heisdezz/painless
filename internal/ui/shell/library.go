@@ -51,7 +51,7 @@ func newViewer(store *state.Store, redraw func(), root string, source viewer.Sou
 		RefreshWindow: redraw,
 		OnClose: func() {
 			if store != nil {
-				store.Navigate(state.ScreenCatalog)
+				store.Navigate(store.State.BackScreen())
 			}
 		},
 	})

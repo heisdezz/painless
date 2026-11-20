@@ -17,6 +17,7 @@ type AppState struct {
 	mu sync.RWMutex
 
 	screen    Screen
+	prev      Screen // screen active before the current one, used by BackScreen
 	drives    []domain.DriveInfo
 	activeID  string // domain.DriveInfo.ID of the active drive, "" if none
 	selection Selection
@@ -48,9 +49,24 @@ func (s *AppState) SetScreen(scr Screen) bool {
 	}
 	s.mu.Lock()
 	changed := s.screen != scr
-	s.screen = scr
+	if changed {
+		s.prev = s.screen
+		s.screen = scr
+	}
 	s.mu.Unlock()
 	return changed
+}
+
+// BackScreen returns the route to return to when leaving the current screen:
+// the screen active before the current one, or the catalog when there is no
+// recorded route or it is the current screen.
+func (s *AppState) BackScreen() Screen {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.prev.Valid() && s.prev != s.screen {
+		return s.prev
+	}
+	return ScreenCatalog
 }
 
 // Drives returns a copy of the currently detected drives.

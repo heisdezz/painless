@@ -60,8 +60,8 @@ func TestViewerDeepLink(t *testing.T) {
 	if err := tt.Click("Back to Library"); err != nil {
 		t.Fatal(err)
 	}
-	if store.State.Screen() != state.ScreenCatalog {
-		t.Fatalf("screen after viewer Close = %q, want catalog", store.State.Screen())
+	if store.State.Screen() != state.ScreenDashboard {
+		t.Fatalf("screen after viewer Close = %q, want dashboard (the route the viewer was opened from)", store.State.Screen())
 	}
 
 	// The dashboard's recent-media carousel routes through the same viewer.
@@ -76,5 +76,26 @@ func TestViewerDeepLink(t *testing.T) {
 	empty.OpenViewer(item, nil)
 	if store.State.Screen() != state.ScreenViewer {
 		t.Fatalf("screen without viewer = %q, want viewer", store.State.Screen())
+	}
+}
+
+// TestViewerBackReturnsToAlbums checks that closing the viewer from the album
+// detail returns to the albums screen, not the catalog.
+func TestViewerBackReturnsToAlbums(t *testing.T) {
+	store := state.NewStore()
+	shell := New(store)
+
+	store.Navigate(state.ScreenAlbums)
+	shell.openInViewer(domain.MediaItem{ID: 1, CurrentRelativePath: "photos/a.jpg"})
+	if store.State.Screen() != state.ScreenViewer {
+		t.Fatalf("screen after openInViewer = %q, want viewer", store.State.Screen())
+	}
+	if got := store.State.BackScreen(); got != state.ScreenAlbums {
+		t.Fatalf("back screen = %q, want albums", got)
+	}
+
+	shell.Viewer().Close()
+	if got := store.State.Screen(); got != state.ScreenAlbums {
+		t.Fatalf("screen after Close = %q, want albums", got)
 	}
 }

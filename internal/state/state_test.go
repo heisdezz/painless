@@ -434,3 +434,26 @@ func TestConcurrentAccess(t *testing.T) {
 	sub.Cancel()
 	<-done
 }
+
+func TestBackScreen(t *testing.T) {
+	st := NewStore()
+
+	// No navigation yet: back falls back to the catalog.
+	if got := st.State.BackScreen(); got != ScreenCatalog {
+		t.Fatalf("initial back screen = %q, want catalog", got)
+	}
+
+	st.Navigate(ScreenAlbums)
+	st.Navigate(ScreenViewer)
+	if got := st.State.BackScreen(); got != ScreenAlbums {
+		t.Fatalf("back screen = %q, want albums", got)
+	}
+
+	st.Navigate(st.State.BackScreen())
+	if st.State.Screen() != ScreenAlbums {
+		t.Fatalf("screen = %q, want albums", st.State.Screen())
+	}
+	if got := st.State.BackScreen(); got != ScreenViewer {
+		t.Fatalf("back screen after returning = %q, want viewer", got)
+	}
+}
