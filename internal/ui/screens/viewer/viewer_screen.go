@@ -251,8 +251,15 @@ func (s *Screen) View(c *mui.Context) {
 	itemPtr := s.currentItem
 	s.mu.RUnlock()
 
+	// The stage is the screen's one root, keyed so it never passes for an
+	// element of another screen. Whatever takes the screen away — a rail
+	// item, a shortcut, the window closing — unmounts it, and playback
+	// stops with it instead of running on behind the next screen.
+	stage := mui.Column(c).Key("viewer-stage").Fill()
+	stage.OnUnmount(s.stopVideo)
+
 	if itemPtr == nil {
-		mui.Column(c).Fill().Center().Children(func() {
+		stage.Center().Children(func() {
 			display.Empty(c, display.EmptyProps{
 				Icon:        lucide.Image(),
 				Title:       "No media selected",
@@ -276,7 +283,7 @@ func (s *Screen) View(c *mui.Context) {
 	})
 
 	// Theater layout: slim chrome over a dark stage, inspector rail right.
-	mui.Column(c).Fill().Background(tk.BgBase).Children(func() {
+	stage.Background(tk.BgBase).Children(func() {
 		// Top bar
 		s.renderTopBar(c, tk, item)
 

@@ -89,7 +89,9 @@ func (s *Shell) content(c *mui.Context, tk *lobetheme.Tokens) {
 			return
 		}
 		if screen == state.ScreenViewer && s.viewer != nil {
-			mui.Column(c).Grow(1).Basis(0).Children(func() { s.viewer.View(c) })
+			// Keyed so the stage is never mistaken for another screen's
+			// element: leaving the viewer unmounts it and stops playback.
+			mui.Column(c).Key("screen-viewer").Grow(1).Basis(0).Children(func() { s.viewer.View(c) })
 			return
 		}
 		if screen == state.ScreenCatalog && s.catalog != nil {
