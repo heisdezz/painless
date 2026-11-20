@@ -190,11 +190,13 @@ func (s *Screen) View(c *mui.Context) {
 		})
 
 		// 2. Virtual staging review table
-		mui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
-			if !s.isExecuting {
-				s.stagingTable(c, tk)
-			}
-		})
+		if s.StagedCount() > 0 {
+			mui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
+				if !s.isExecuting {
+					s.stagingTable(c, tk)
+				}
+			})
+		}
 
 		// 3. Consolidate & execute action banner
 		s.executePanel(c, tk)
