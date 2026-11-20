@@ -167,6 +167,49 @@ func TestDiscoverScreen_QueueDiscoveredStagesWithoutExecuting(t *testing.T) {
 	}
 }
 
+// staticAlbumSource serves a fixed album list to the discover screen.
+type staticAlbumSource struct {
+	summaries []domain.AlbumSummary
+}
+
+func (s staticAlbumSource) List(ctx context.Context) ([]domain.AlbumSummary, error) {
+	return s.summaries, nil
+}
+
+// TestDiscoverScreen_QueueDiscoveredStagesIntoDirectoryAlbum pins the scanner
+// hand-off: items pre-assigned to an album by the scan are staged as moves
+// into that album (merged if it exists, created on execute), while items the
+// screen cannot resolve still fall back to unknown/.
+func TestDiscoverScreen_QueueDiscoveredStagesIntoDirectoryAlbum(t *testing.T) {
+	vacationID := int64(5)
+	screen := New(Options{
+		AlbumSource: staticAlbumSource{summaries: []domain.AlbumSummary{
+			{Album: domain.Album{ID: vacationID, Name: "Vacation"}},
+		}},
+	})
+	screen.QueueDiscovered([]domain.MediaItem{
+		{ID: 1, FileHash: "a", CurrentRelativePath: "in/one.jpg", AlbumID: &vacationID},
+		{ID: 2, FileHash: "b", CurrentRelativePath: "in/two.jpg", AlbumID: &[]int64{9}[0]},
+	})
+
+	ops := screen.stager.ListOperations()
+	if len(ops) != 2 {
+		t.Fatalf("staged = %d, want 2", len(ops))
+	}
+	byItem := make(map[int64]domain.StagedOperation, len(ops))
+	for _, op := range ops {
+		byItem[op.MediaID] = op
+	}
+	vac := byItem[1]
+	if vac.TargetAlbumName != "Vacation" || vac.TargetAlbumID == nil || *vac.TargetAlbumID != vacationID {
+		t.Errorf("item 1 op = %+v, want a move into album Vacation (%d)", vac, vacationID)
+	}
+	unk := byItem[2]
+	if unk.TargetAlbumName != "" || unk.TargetAlbumID != nil {
+		t.Errorf("item 2 op = %+v, want an unknown/ fallback move", unk)
+	}
+}
+
 func TestDiscoverScreen_CloseStopsScan(t *testing.T) {
 	mScanner := &mockScanner{}
 	screen := New(Options{

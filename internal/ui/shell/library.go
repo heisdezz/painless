@@ -162,9 +162,11 @@ func (l *libraryController) sync() {
 	var screen *discover.Screen
 	if !db.IsReadOnly() {
 		opts.ScannerFactory = func(cfg scanner.Config, progress func(scanner.Progress)) discover.Scanner {
+			cfg.Albums = albumRepo
 			return scanner.New(cfg, scanInserter{MediaRepo: mediaRepo, queue: screen.QueueDiscovered}, progress)
 		}
 		opts.AlbumScannerFactory = func(cfg scanner.Config, progress func(scanner.Progress)) discover.Scanner {
+			cfg.Albums = albumRepo
 			return scanner.New(cfg, scanInserter{MediaRepo: mediaRepo}, progress)
 		}
 	}

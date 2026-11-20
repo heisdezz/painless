@@ -251,3 +251,118 @@ func TestScanner_PauseResumeCancel(t *testing.T) {
 		t.Errorf("expected all 20 media files found, got %d", scanner.Status().MediaFound)
 	}
 }
+
+// memoryAlbums is a fake AlbumResolver recording creations and lookups.
+type memoryAlbums struct {
+	mu      sync.Mutex
+	names   map[string]int64
+	nextID  int64
+	created []string
+}
+
+func newMemoryAlbums() *memoryAlbums {
+	return &memoryAlbums{names: make(map[string]int64), nextID: 1}
+}
+
+func (a *memoryAlbums) GetByName(ctx context.Context, name string) (*domain.Album, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if id, ok := a.names[name]; ok {
+		return &domain.Album{ID: id, Name: name}, nil
+	}
+	return nil, nil
+}
+
+func (a *memoryAlbums) Create(ctx context.Context, input domain.CreateAlbumInput) (*domain.Album, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if id, ok := a.names[input.Name]; ok {
+		return &domain.Album{ID: id, Name: input.Name}, nil
+	}
+	id := a.nextID
+	a.nextID++
+	a.names[input.Name] = id
+	a.created = append(a.created, input.Name)
+	return &domain.Album{ID: id, Name: input.Name}, nil
+}
+
+func writeTestPNG(t *testing.T, path string, seed byte) {
+	t.Helper()
+	// Vary a pixel so successive files are not byte-identical duplicates.
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	img.Set(0, 0, color.RGBA{R: seed, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("png encode failed: %v", err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("write %s failed: %v", path, err)
+	}
+}
+
+// TestScannerAssignsAlbumsByDirectory pins the directory-to-album rule: media
+// found under a folder joins the album named after that folder (created on
+// first use, merged afterwards); files at the scan root stay unassigned.
+func TestScannerAssignsAlbumsByDirectory(t *testing.T) {
+	driveRoot := t.TempDir()
+	ctx := context.Background()
+
+	vacation := filepath.Join(driveRoot, "Vacation")
+	beach := filepath.Join(driveRoot, "Vacation", "Beach")
+	if err := os.MkdirAll(beach, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	writeTestPNG(t, filepath.Join(vacation, "a.png"), 10)
+	writeTestPNG(t, filepath.Join(beach, "b.png"), 20)
+	writeTestPNG(t, filepath.Join(driveRoot, "root.png"), 30)
+
+	albums := newMemoryAlbums()
+	mockDB := newMockInserter()
+	scanner := New(Config{
+		DriveRoot:   driveRoot,
+		WorkerCount: 2,
+		Albums:      albums,
+	}, mockDB, nil)
+
+	if err := scanner.Scan(ctx); err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+
+	byName := make(map[string]domain.MediaItem)
+	for _, item := range mockDB.items {
+		byName[filepath.Base(item.CurrentRelativePath)] = item
+	}
+
+	if got := byName["a.png"].AlbumID; got == nil || *got != albums.names["Vacation"] {
+		t.Errorf("a.png should join album 'Vacation' (id %d), got %v", albums.names["Vacation"], got)
+	}
+	// Current folder only: Beach/b.png belongs to 'Beach', not 'Vacation'.
+	if got := byName["b.png"].AlbumID; got == nil || *got != albums.names["Beach"] {
+		t.Errorf("b.png should join album 'Beach' (id %d), got %v", albums.names["Beach"], got)
+	}
+	if got := byName["root.png"].AlbumID; got != nil {
+		t.Errorf("root.png sits in the scan root and should stay unassigned, got %v", *got)
+	}
+	if len(albums.created) != 2 {
+		t.Errorf("expected albums created for exactly 2 new names, got %v", albums.created)
+	}
+
+	// A rescan merges into the existing albums instead of recreating them.
+	albums.created = nil
+	writeTestPNG(t, filepath.Join(vacation, "c.png"), 40)
+	if err := scanner.Scan(ctx); err != nil {
+		t.Fatalf("rescan failed: %v", err)
+	}
+	if len(albums.created) != 0 {
+		t.Errorf("existing albums must be merged, not recreated; created %v", albums.created)
+	}
+	var assigned int
+	for _, item := range mockDB.items {
+		if filepath.Base(item.CurrentRelativePath) == "c.png" && item.AlbumID != nil && *item.AlbumID == albums.names["Vacation"] {
+			assigned = 1
+		}
+	}
+	if assigned != 1 {
+		t.Errorf("c.png should have merged into existing album 'Vacation'")
+	}
+}

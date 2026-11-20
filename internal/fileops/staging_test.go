@@ -53,10 +53,34 @@ func (m *mockMediaStore) DeleteBatch(ctx context.Context, mediaIDs []int64) (int
 
 type mockAlbumStore struct {
 	albums map[int64]*domain.Album
+	nextID int64
+}
+
+func newMockAlbumStore() *mockAlbumStore {
+	return &mockAlbumStore{albums: map[int64]*domain.Album{}, nextID: 1}
 }
 
 func (a *mockAlbumStore) GetByID(ctx context.Context, id int64) (*domain.Album, error) {
 	return a.albums[id], nil
+}
+
+func (a *mockAlbumStore) GetByName(ctx context.Context, name string) (*domain.Album, error) {
+	for _, album := range a.albums {
+		if album.Name == name {
+			return album, nil
+		}
+	}
+	return nil, nil
+}
+
+func (a *mockAlbumStore) Create(ctx context.Context, input domain.CreateAlbumInput) (*domain.Album, error) {
+	if existing, _ := a.GetByName(ctx, input.Name); existing != nil {
+		return existing, nil
+	}
+	album := &domain.Album{ID: a.nextID, Name: input.Name}
+	a.nextID++
+	a.albums[album.ID] = album
+	return album, nil
 }
 
 func TestScaffoldLibrary(t *testing.T) {
@@ -247,11 +271,8 @@ func TestStagingEngine_ExecuteAndRollback(t *testing.T) {
 	mediaStore.paths[2] = "incoming/video1.mp4"
 	mediaStore.paths[3] = "incoming/temp.txt"
 
-	albumStore := &mockAlbumStore{
-		albums: map[int64]*domain.Album{
-			42: {ID: 42, Name: "Travel"},
-		},
-	}
+	albumStore := newMockAlbumStore()
+	albumStore.albums[42] = &domain.Album{ID: 42, Name: "Travel"}
 
 	progressCalls := 0
 	report, err := stager.Execute(ctx, driveRoot, mediaStore, albumStore, func(cur, tot int, op domain.StagedOperation) {
@@ -312,5 +333,56 @@ func TestStagingEngine_ExecuteAndRollback(t *testing.T) {
 	}
 	if mediaStore.paths[1] != "incoming/photo1.jpg" {
 		t.Errorf("mediaStore path should be rolled back to incoming/photo1.jpg, got %s", mediaStore.paths[1])
+	}
+}
+
+// TestExecuteResolvesNameOnlyAlbums pins the merge-or-create rule: a staged
+// move carrying only an album name joins the existing album of that name, or
+// has a new album created, and the DB association uses the resolved ID.
+func TestExecuteResolvesNameOnlyAlbums(t *testing.T) {
+	driveRoot := t.TempDir()
+	ctx := context.Background()
+
+	incoming := filepath.Join(driveRoot, "incoming")
+	if err := os.MkdirAll(incoming, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	file1 := filepath.Join(incoming, "existing.png")
+	file2 := filepath.Join(incoming, "fresh.png")
+	_ = os.WriteFile(file1, []byte("data one"), 0644)
+	_ = os.WriteFile(file2, []byte("data two"), 0644)
+
+	h1, _ := CalculateFileSHA256(file1)
+	h2, _ := CalculateFileSHA256(file2)
+
+	mediaStore := newMockMediaStore()
+	mediaStore.paths[1] = "incoming/existing.png"
+	mediaStore.paths[2] = "incoming/fresh.png"
+
+	albumStore := newMockAlbumStore()
+	existing := &domain.Album{ID: 7, Name: "Existing"}
+	albumStore.albums[7] = existing
+
+	stager := NewStagingEngine()
+	stager.StageMove(domain.MediaItem{ID: 1, FileHash: h1, CurrentRelativePath: "incoming/existing.png"}, nil, "Existing")
+	stager.StageMove(domain.MediaItem{ID: 2, FileHash: h2, CurrentRelativePath: "incoming/fresh.png"}, nil, "Fresh")
+
+	report, err := stager.Execute(ctx, driveRoot, mediaStore, albumStore, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if report.MovedCount != 2 || report.FailedCount != 0 {
+		t.Fatalf("expected 2 moves / 0 failures, got %+v", report)
+	}
+
+	if mediaStore.albums[1] != 7 {
+		t.Errorf("item 1 should merge into existing album 7, got %v", mediaStore.albums[1])
+	}
+	fresh, ok := albumStore.albums[mediaStore.albums[2]]
+	if !ok || fresh.Name != "Fresh" {
+		t.Errorf("item 2 should land in a newly created 'Fresh' album, got %v", mediaStore.albums[2])
+	}
+	if _, err := os.Stat(filepath.Join(driveRoot, "albums", "Fresh", "fresh.png")); err != nil {
+		t.Errorf("file should be moved into albums/Fresh: %v", err)
 	}
 }

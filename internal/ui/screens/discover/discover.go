@@ -110,11 +110,12 @@ type Screen struct {
 	lastScanErr string
 
 	// Staging table state
-	stagedOps    []domain.StagedOperation
-	summary      domain.StagingSummary
-	albums       []string
-	albumMap     map[string]int64
-	selectedItem int64
+	stagedOps     []domain.StagedOperation
+	summary       domain.StagingSummary
+	albums        []string
+	albumMap      map[string]int64
+	albumNameByID map[int64]string
+	selectedItem  int64
 
 	// Consolidate & execute modal state
 	modalOpen    bool
@@ -159,6 +160,7 @@ func New(opts Options) *Screen {
 		albumStore:           opts.AlbumStore,
 		refreshWindow:        opts.RefreshWindow,
 		albumMap:             make(map[string]int64),
+		albumNameByID:        make(map[int64]string),
 		stagedOps:            stager.ListOperations(),
 		summary:              stager.Summary(),
 	}
@@ -216,13 +218,20 @@ func (s *Screen) View(c *mui.Context) {
 func (s *Screen) ReloadAlbums() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadAlbumsLocked()
+}
+
+// reloadAlbumsLocked refetches the album list; s.mu must be held.
+func (s *Screen) reloadAlbumsLocked() {
 	if !s.closed && s.albumSource != nil {
 		if summaries, err := s.albumSource.List(s.ctx); err == nil {
 			s.albums = make([]string, 0, len(summaries))
 			s.albumMap = make(map[string]int64, len(summaries))
+			s.albumNameByID = make(map[int64]string, len(summaries))
 			for _, sum := range summaries {
 				s.albums = append(s.albums, sum.Album.Name)
 				s.albumMap[sum.Album.Name] = sum.Album.ID
+				s.albumNameByID[sum.Album.ID] = sum.Album.Name
 			}
 		}
 	}
@@ -263,9 +272,27 @@ func (s *Screen) publish(apply func()) {
 }
 
 // QueueDiscovered adds committed scan results to virtual staging, not to disk.
+// The scanner pre-assigns each item to an album named after the folder it was
+// found in, so staged ops default to that album (created on execute) instead
+// of the unknown/ fallback.
 func (s *Screen) QueueDiscovered(items []domain.MediaItem) {
 	s.publish(func() {
 		for _, item := range items {
+			if item.AlbumID != nil {
+				if _, ok := s.albumNameByID[*item.AlbumID]; !ok {
+					// Albums created while the scan ran are not listed yet.
+					s.reloadAlbumsLocked()
+					break
+				}
+			}
+		}
+		for _, item := range items {
+			if item.AlbumID != nil {
+				if name, ok := s.albumNameByID[*item.AlbumID]; ok {
+					s.stager.StageMove(item, item.AlbumID, name)
+					continue
+				}
+			}
 			s.stager.StageUnknown(item)
 		}
 		s.stagedOps = s.stager.ListOperations()

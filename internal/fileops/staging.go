@@ -19,9 +19,12 @@ type MediaStore interface {
 	DeleteBatch(ctx context.Context, mediaIDs []int64) (int64, error)
 }
 
-// AlbumStore provides album metadata lookups.
+// AlbumStore provides album metadata lookups and name-based creation so
+// name-only staged moves can merge into an existing album or create one.
 type AlbumStore interface {
 	GetByID(ctx context.Context, id int64) (*domain.Album, error)
+	GetByName(ctx context.Context, name string) (*domain.Album, error)
+	Create(ctx context.Context, input domain.CreateAlbumInput) (*domain.Album, error)
 }
 
 // JournalEntry tracks a physically executed move for rollback safety.
@@ -259,6 +262,18 @@ func (e *StagingEngine) Execute(
 			if albumName == "" && op.TargetAlbumID != nil && albumStore != nil {
 				if album, err := albumStore.GetByID(ctx, *op.TargetAlbumID); err == nil && album != nil {
 					albumName = album.Name
+				}
+			}
+
+			// Name-only destinations resolve against the library so the
+			// media lands in an existing album (merged) or a fresh one.
+			if albumName != "" && op.TargetAlbumID == nil && albumStore != nil {
+				if album, err := albumStore.GetByName(ctx, albumName); err == nil && album != nil {
+					op.TargetAlbumID = &album.ID
+				} else if created, cErr := albumStore.Create(ctx, domain.CreateAlbumInput{Name: albumName}); cErr == nil {
+					op.TargetAlbumID = &created.ID
+				} else if album, err := albumStore.GetByName(ctx, albumName); err == nil && album != nil {
+					op.TargetAlbumID = &album.ID
 				}
 			}
 

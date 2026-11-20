@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -19,6 +20,14 @@ type MediaInserter interface {
 	GetByHash(ctx context.Context, hash string) (*domain.MediaItem, error)
 }
 
+// AlbumResolver groups scanned media into albums named after the directory
+// they were found in: an existing album name is reused (merged into), a new
+// one is created.
+type AlbumResolver interface {
+	GetByName(ctx context.Context, name string) (*domain.Album, error)
+	Create(ctx context.Context, input domain.CreateAlbumInput) (*domain.Album, error)
+}
+
 // Config configures the concurrent scanning pipeline.
 type Config struct {
 	DriveRoot   string
@@ -27,6 +36,9 @@ type Config struct {
 	BatchSize   int
 	// Ignore holds custom directory-name patterns from the Discover screen.
 	Ignore []string
+	// Albums, when set, assigns every scanned item to an album named after
+	// its immediate parent directory, creating that album on first use.
+	Albums AlbumResolver
 }
 
 // Progress tracks real-time progress and discovery statistics during scanning.
@@ -55,6 +67,9 @@ type Scanner struct {
 
 	seenMu     sync.Mutex
 	seenHashes map[string]bool
+
+	albumMu  sync.Mutex
+	albumIDs map[string]*int64
 }
 
 // New creates a new Scanner instance.
@@ -74,6 +89,7 @@ func New(cfg Config, inserter MediaInserter, onProgress func(Progress)) *Scanner
 		inserter:   inserter,
 		progressCb: onProgress,
 		seenHashes: make(map[string]bool),
+		albumIDs:   make(map[string]*int64),
 	}
 	s.pauseCond = sync.NewCond(&s.mu)
 	return s
@@ -179,6 +195,10 @@ func (s *Scanner) Scan(parentCtx context.Context) error {
 	s.seenMu.Lock()
 	s.seenHashes = make(map[string]bool)
 	s.seenMu.Unlock()
+
+	s.albumMu.Lock()
+	s.albumIDs = make(map[string]*int64)
+	s.albumMu.Unlock()
 
 	defer func() {
 		s.mu.Lock()
@@ -345,6 +365,38 @@ func (s *Scanner) checkDuplicate(ctx context.Context, hash string) bool {
 	return false
 }
 
+// albumForDir returns the ID of the album named after a directory, creating
+// it on first use and caching the result for the scan session. A nil ID means
+// the item stays unassigned; album grouping never fails the scan.
+func (s *Scanner) albumForDir(ctx context.Context, name string) *int64 {
+	if s.config.Albums == nil || !domain.ValidateAlbumName(name) {
+		return nil
+	}
+
+	s.albumMu.Lock()
+	defer s.albumMu.Unlock()
+	if id, ok := s.albumIDs[name]; ok {
+		return id
+	}
+
+	album, err := s.config.Albums.GetByName(ctx, name)
+	if err == nil && album == nil {
+		album, err = s.config.Albums.Create(ctx, domain.CreateAlbumInput{Name: name})
+		if err != nil {
+			// Lost a creation race or hit a constraint; the existing album
+			// still groups the item.
+			album, err = s.config.Albums.GetByName(ctx, name)
+		}
+	}
+	if err != nil || album == nil {
+		return nil
+	}
+
+	id := album.ID
+	s.albumIDs[name] = &id
+	return &id
+}
+
 func (s *Scanner) processFile(ctx context.Context, filePath string, results chan<- domain.MediaItem) {
 	mimeType, isMedia, err := SniffMediaType(filePath)
 	if err != nil || !isMedia {
@@ -397,6 +449,18 @@ func (s *Scanner) processFile(ctx context.Context, filePath string, results chan
 		DurationSeconds:      durationSecs,
 		MetadataJSON:         metaJSON,
 		CreatedAt:            info.ModTime(),
+	}
+
+	// Group by the folder the file was found in, relative to the scan root:
+	// files directly in the root itself stay unassigned.
+	scanRoot := s.config.DriveRoot
+	if s.config.TargetDir != "" {
+		scanRoot = s.config.TargetDir
+	}
+	if relToScan, relErr := filepath.Rel(scanRoot, filePath); relErr == nil {
+		if dir := path.Dir(filepath.ToSlash(relToScan)); dir != "." && dir != "/" {
+			item.AlbumID = s.albumForDir(ctx, path.Base(dir))
+		}
 	}
 
 	s.updateProgress(func(p *Progress) {
