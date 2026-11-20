@@ -106,6 +106,7 @@ func (d dashboardDrives) ListDrives(ctx context.Context) ([]domain.DriveInfo, er
 // dashboardActions routes dashboard commands into the store.
 type dashboardActions struct {
 	store  *state.Store
+	shell  *Shell
 	viewer *viewer.Screen
 	reload func() // refreshes the dashboard data itself
 }
@@ -124,6 +125,11 @@ func (a dashboardActions) OpenViewer(item domain.MediaItem, all []domain.MediaIt
 }
 
 func (a dashboardActions) OpenAlbum(album domain.AlbumSummary) {
+	if a.shell != nil {
+		if alb := a.shell.Albums(); alb != nil {
+			alb.OpenAlbum(album)
+		}
+	}
 	a.store.Navigate(state.ScreenAlbums)
 }
 
@@ -154,6 +160,7 @@ func (l *libraryController) syncDashboard(drive domain.DriveInfo, mediaRepo *sto
 		Thumbs:      thumbs,
 		Actions: dashboardActions{
 			store:  l.store,
+			shell:  l.shell,
 			viewer: l.shell.Viewer(),
 			reload: func() { l.shell.Dashboard().Reload() },
 		},
