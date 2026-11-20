@@ -70,14 +70,19 @@ type Options struct {
 	Source  Source
 	Thumbs  Thumbnailer
 	Actions Actions
+	// ThumbsEnabled reports the live display-thumbnails setting; while it
+	// returns false, cards render without preview images and no fetch
+	// workers are scheduled. Nil means thumbnails are always enabled.
+	ThumbsEnabled func() bool
 }
 
 // Screen owns the catalog's filter, selection and thumbnail state. It is
 // used on the UI thread; worker results are collected under mu.
 type Screen struct {
-	source  Source
-	thumbs  Thumbnailer
-	actions Actions
+	source        Source
+	thumbs        Thumbnailer
+	thumbsEnabled func() bool
+	actions       Actions
 
 	query          string
 	lastQuery      string
@@ -143,18 +148,19 @@ func New(opts Options) *Screen {
 		opts.Actions = NoopActions{}
 	}
 	screen := &Screen{
-		source:   opts.Source,
-		thumbs:   opts.Thumbs,
-		actions:  opts.Actions,
-		selected: -1,
-		pivot:    -1,
-		pending:  make(map[string]bool),
-		fetched:  make(map[string][]byte),
-		limits:   make(chan struct{}, 4),
-		bitmaps:  make(map[string]*mui.Bitmap),
-		page:     &domain.MediaListPage{},
-		results:  make(chan pageResult, 1),
-		pageNum:  1,
+		source:        opts.Source,
+		thumbs:        opts.Thumbs,
+		thumbsEnabled: opts.ThumbsEnabled,
+		actions:       opts.Actions,
+		selected:      -1,
+		pivot:         -1,
+		pending:       make(map[string]bool),
+		fetched:       make(map[string][]byte),
+		limits:        make(chan struct{}, 4),
+		bitmaps:       make(map[string]*mui.Bitmap),
+		page:          &domain.MediaListPage{},
+		results:       make(chan pageResult, 1),
+		pageNum:       1,
 	}
 	screen.grid.Key = func(i int) any { return screen.page.Items[i].ID }
 	screen.grid.Label = func(i int) string {
@@ -330,6 +336,9 @@ func (s *Screen) SelectedIDs() []int64 {
 // bitmapFor serves decoded thumbnails from a UI-thread cache and loads
 // missing ones on a bounded worker pool. Workers never touch *mui.Context.
 func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
+	if s.thumbsDisabled() {
+		return nil
+	}
 	if bitmap, ok := s.bitmaps[item.FileHash]; ok {
 		return bitmap
 	}
@@ -374,4 +383,9 @@ func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
 		services.Invalidate()
 	}(item.FileHash, item)
 	return nil
+}
+
+// thumbsDisabled reports whether the display-thumbnails setting is off.
+func (s *Screen) thumbsDisabled() bool {
+	return s.thumbsEnabled != nil && !s.thumbsEnabled()
 }

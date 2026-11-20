@@ -115,6 +115,9 @@ func formatMediaDuration(seconds int) string {
 }
 
 func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
+	if s.thumbsDisabled() {
+		return nil
+	}
 	s.mu.Lock()
 	if s.bitmaps == nil {
 		s.bitmaps = make(map[string]*mui.Bitmap)
@@ -152,4 +155,9 @@ func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
 	}(item.FileHash, item)
 
 	return nil
+}
+
+// thumbsDisabled reports whether the display-thumbnails setting is off.
+func (s *Screen) thumbsDisabled() bool {
+	return s.thumbsEnabled != nil && !s.thumbsEnabled()
 }

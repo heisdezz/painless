@@ -61,9 +61,13 @@ func (NoopActions) Refresh()                                        {}
 
 // Options configures a new dashboard screen.
 type Options struct {
-	Source        Source
-	DriveSource   DriveSource
-	Thumbs        Thumbnailer
+	Source      Source
+	DriveSource DriveSource
+	Thumbs      Thumbnailer
+	// ThumbsEnabled reports the live display-thumbnails setting; while it
+	// returns false, cards render without preview images and no fetch
+	// workers are scheduled. Nil means thumbnails are always enabled.
+	ThumbsEnabled func() bool
 	Actions       Actions
 	RefreshWindow func()
 	ActiveDrive   *domain.DriveInfo

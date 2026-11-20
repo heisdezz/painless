@@ -1,8 +1,12 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -383,4 +387,62 @@ func TestDashboard_ConcurrentAccess(t *testing.T) {
 	_ = tt.Texts()
 
 	wg.Wait()
+}
+
+// pngThumbnailer serves a decodable tiny PNG and records calls.
+type pngThumbnailer struct{ calls atomic.Int64 }
+
+func (p *pngThumbnailer) Get(context.Context, domain.MediaItem) ([]byte, error) {
+	p.calls.Add(1)
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, img); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func TestDashboardThumbnailsDisabled(t *testing.T) {
+	enabled := false
+	drive := testDrive()
+	src := &mockDashboardSource{
+		stats:  testStats(),
+		media:  testMedia(),
+		albums: testAlbums(),
+	}
+	thumbs := &pngThumbnailer{}
+
+	screen := New(Options{
+		ActiveDrive:   &drive,
+		Source:        src,
+		Thumbs:        thumbs,
+		ThumbsEnabled: func() bool { return enabled },
+		Actions:       &recordedActions{},
+	})
+
+	tt := mui.NewTester(screen.View, 1200, 800)
+	time.Sleep(80 * time.Millisecond)
+	for i := 0; i < 5; i++ {
+		tt.Frame()
+	}
+	if calls := thumbs.calls.Load(); calls != 0 {
+		t.Fatalf("disabled setting scheduled %d fetches, want 0", calls)
+	}
+	if len(screen.bitmaps) != 0 {
+		t.Fatal("disabled setting decoded bitmaps")
+	}
+
+	// Enabling the setting resumes fetching and decoding.
+	enabled = true
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(screen.bitmaps) == 0 {
+		time.Sleep(20 * time.Millisecond)
+		tt.Frame()
+	}
+	if thumbs.calls.Load() == 0 {
+		t.Fatal("enabled setting never fetched")
+	}
+	if len(screen.bitmaps) == 0 {
+		t.Fatal("enabled setting decoded no bitmaps")
+	}
 }

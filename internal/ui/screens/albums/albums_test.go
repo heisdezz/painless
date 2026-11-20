@@ -526,3 +526,45 @@ func TestAlbumScreen_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestAlbumMemberThumbnailsDisabled(t *testing.T) {
+	enabled := false
+	repo := newMockAlbumRepo()
+	albumID := int64(1)
+	mediaRepo := &mockMediaRepo{items: []domain.MediaItem{
+		{ID: 101, FileHash: "hash-101", AlbumID: &albumID, CurrentRelativePath: "photos/beach.jpg", FileSize: 2048, MimeType: "image/jpeg"},
+	}}
+	thumbs := &stubThumbs{}
+
+	screen := New(Options{
+		Albums: repo, Media: mediaRepo, Thumbs: thumbs,
+		ThumbsEnabled: func() bool { return enabled },
+	})
+	screen.OpenAlbum(repo.summaries[0])
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	for i := 0; i < 10; i++ {
+		tt.Frame()
+	}
+	time.Sleep(30 * time.Millisecond)
+	if calls := thumbs.calls.Load(); calls != 0 {
+		t.Fatalf("disabled setting scheduled %d fetches, want 0", calls)
+	}
+	if len(screen.bitmaps) != 0 {
+		t.Fatal("disabled setting decoded bitmaps")
+	}
+
+	// Enabling the setting resumes fetching and decoding.
+	enabled = true
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(screen.bitmaps) == 0 {
+		time.Sleep(20 * time.Millisecond)
+		tt.Frame()
+	}
+	if thumbs.calls.Load() == 0 {
+		t.Fatal("enabled setting never fetched")
+	}
+	if len(screen.bitmaps) == 0 {
+		t.Fatal("enabled setting decoded no bitmaps")
+	}
+}

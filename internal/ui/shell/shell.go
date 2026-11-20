@@ -78,7 +78,22 @@ func (s *Shell) Toaster() *Toaster { return s.toaster }
 // SetCatalog wires a media source, thumbnail renderer and action handlers
 // into the library screen. Call before the window is shown.
 func (s *Shell) SetCatalog(source catalog.Source, thumbs catalog.Thumbnailer, actions catalog.Actions) {
-	s.catalog = catalog.New(catalog.Options{Source: source, Thumbs: thumbs, Actions: actions})
+	s.catalog = catalog.New(catalog.Options{
+		Source:        source,
+		Thumbs:        thumbs,
+		Actions:       actions,
+		ThumbsEnabled: s.thumbsEnabledFn(),
+	})
+}
+
+// thumbsEnabledFn exposes the store's display-thumbnails setting as the
+// predicate the thumbnail-rendering screens consult. Nil store keeps the
+// screens at their default of always enabled.
+func (s *Shell) thumbsEnabledFn() func() bool {
+	if s.store == nil {
+		return nil
+	}
+	return s.store.ThumbnailsEnabled
 }
 
 // Catalog returns the library screen, for tests and further wiring.

@@ -403,3 +403,78 @@ func TestCatalogRevealStaggersOnFirstLoad(t *testing.T) {
 		t.Fatal("requery restarted the reveal choreography")
 	}
 }
+
+// bitmapWait pumps frames until cond holds, for bitmapFor assertions made
+// without a full tester window.
+func bitmapWait(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("bitmap condition never met")
+}
+
+func TestCatalogBitmapForDisabledStopsFetching(t *testing.T) {
+	enabled := false
+	thumbs := &fakeThumbs{}
+	screen := New(Options{Thumbs: thumbs, ThumbsEnabled: func() bool { return enabled }})
+	item := testItems()[0]
+
+	// While the setting is off, no bitmap is served and no worker is scheduled.
+	if bitmap := screen.bitmapFor(item); bitmap != nil {
+		t.Fatal("disabled setting served a bitmap")
+	}
+	time.Sleep(30 * time.Millisecond)
+	if calls := thumbs.calls.Load(); calls != 0 {
+		t.Fatalf("disabled setting scheduled %d fetches, want 0", calls)
+	}
+
+	// Enabling fetches and caches the decoded bitmap.
+	enabled = true
+	if bitmap := screen.bitmapFor(item); bitmap != nil {
+		t.Fatal("first bitmapFor should be async, not synchronous")
+	}
+	bitmapWait(t, func() bool {
+		screen.bitmapFor(item) // View pumps this every frame in production.
+		return screen.bitmaps[item.FileHash] != nil
+	})
+
+	// Disabling again hides the cached bitmap without new fetches.
+	enabled = false
+	if bitmap := screen.bitmapFor(item); bitmap != nil {
+		t.Fatal("disabled setting served a cached bitmap")
+	}
+	if calls := thumbs.calls.Load(); calls != 1 {
+		t.Fatalf("disabled setting scheduled extra fetches: %d", calls)
+	}
+
+	// Re-enabling serves the cached bitmap instantly.
+	enabled = true
+	if bitmap := screen.bitmapFor(item); bitmap == nil {
+		t.Fatal("re-enabled setting lost the cached bitmap")
+	}
+	if calls := thumbs.calls.Load(); calls != 1 {
+		t.Fatalf("re-enable refetched: %d calls, want 1", calls)
+	}
+}
+
+func TestCatalogBitmapForNilPredicateFetches(t *testing.T) {
+	thumbs := &fakeThumbs{}
+	screen := New(Options{Thumbs: thumbs})
+	item := testItems()[0]
+
+	if bitmap := screen.bitmapFor(item); bitmap != nil {
+		t.Fatal("first bitmapFor should be async, not synchronous")
+	}
+	bitmapWait(t, func() bool {
+		screen.bitmapFor(item) // View pumps this every frame in production.
+		return screen.bitmaps[item.FileHash] != nil
+	})
+	if calls := thumbs.calls.Load(); calls != 1 {
+		t.Fatalf("nil predicate blocked fetching: %d calls", calls)
+	}
+}

@@ -18,6 +18,7 @@ type Screen struct {
 	source        Source
 	driveSource   DriveSource
 	thumbs        Thumbnailer
+	thumbsEnabled func() bool
 	actions       Actions
 	refreshWindow func()
 
@@ -44,6 +45,7 @@ func New(opts Options) *Screen {
 		source:        opts.Source,
 		driveSource:   opts.DriveSource,
 		thumbs:        opts.Thumbs,
+		thumbsEnabled: opts.ThumbsEnabled,
 		actions:       actions,
 		refreshWindow: opts.RefreshWindow,
 		activeDrive:   opts.ActiveDrive,

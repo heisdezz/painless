@@ -178,7 +178,8 @@ func (l *libraryController) sync() {
 	l.syncDashboard(drive, mediaRepo, albumRepo, thumbs)
 	l.shell.SetAlbums(albums.New(albums.Options{
 		Albums: albumRepository{albumRepo}, Media: mediaRepo, Thumbs: thumbs,
-		DriveRoot: drive.Path, ReadOnly: db.IsReadOnly(),
+		ThumbsEnabled: l.shell.thumbsEnabledFn(),
+		DriveRoot:     drive.Path, ReadOnly: db.IsReadOnly(),
 	}))
 }
 

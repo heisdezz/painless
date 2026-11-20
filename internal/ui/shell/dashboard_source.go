@@ -156,8 +156,9 @@ func (l *libraryController) syncDashboard(drive domain.DriveInfo, mediaRepo *sto
 			albums:      albumRepo,
 			albumFolder: l.shell.Discover().AlbumFolder,
 		},
-		DriveSource: dashboardDrives{store: l.store},
-		Thumbs:      thumbs,
+		DriveSource:   dashboardDrives{store: l.store},
+		Thumbs:        thumbs,
+		ThumbsEnabled: l.shell.thumbsEnabledFn(),
 		Actions: dashboardActions{
 			store:  l.store,
 			shell:  l.shell,

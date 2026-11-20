@@ -601,15 +601,16 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### UI-GENERAL-THUMBS-TOGGLE: Honor the Display-Thumbnails Switch on Render Paths
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GPT-6 luna)
-- Updated: 2026-11-20T19:52:00Z
+- Updated: 2026-11-20T20:32:52Z
 - Depends on: LOGIC-THUMBNAIL, PHASE7B-SETTINGS (General tab)
 - Allowed paths/scope: `internal/ui/screens/catalog/**`, `internal/ui/screens/albums/albums.go`, `internal/ui/screens/dashboard/**`, `internal/ui/shell/**`, `docs/implementation/progress.md`
 - Acceptance: toggling Settings → General → "Display thumbnails" off hides preview images on catalog, dashboard and album screens (not just stops new generation), and toggling it back on restores them; screens stop scheduling thumbnail fetch workers while disabled; regression tests cover the hidden-while-disabled and restored-when-enabled behavior.
 - Notes:
   - 2026-11-20: User report. The switch writes `store.SetThumbnailsEnabled` correctly (settings test passes) and `thumbnail.Service.Get` returns empty when disabled, but catalog/albums/dashboard `bitmapFor` caches serve already-decoded bitmaps without consulting the flag, so rendered thumbnails never disappear; disabled state also respawns fetch workers every frame on empty results.
   - 2026-11-20T19:52:00Z: Claimed by zed-agent (GPT-6 luna). Plan: add a thumbs-enabled predicate to catalog/albums/dashboard options, guard `bitmapFor` on it, wire the store method value from shell/library controllers, and add regression tests.
+  - 2026-11-20T20:32:52Z: Done. Catalog, albums and dashboard gained a `ThumbsEnabled func() bool` option (nil = always enabled); each `bitmapFor` returns nil while the setting is off, before consulting caches or scheduling fetch workers, so rendered thumbnails disappear immediately and no worker respawns per frame. Re-enabling serves cached bitmaps instantly without refetching. Wired from `Shell.thumbsEnabledFn()` (`store.ThumbnailsEnabled`, nil-store safe) in `SetCatalog`, `SetAlbums` and `syncDashboard`. Tests: `TestCatalogBitmapForDisabledStopsFetching` (hide + no fetch + restore-from-cache), `TestCatalogBitmapForNilPredicateFetches`, `TestAlbumMemberThumbnailsDisabled`, `TestDashboardThumbnailsDisabled`. Verified: gofmt -s, `go vet ./...`, `go tool mygo vet .` in catalog/albums/dashboard/shell, full `CGO_ENABLED=0 go test ./...`, race on touched UI packages + state.
 
 ---
 
@@ -702,10 +703,11 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-20T19:45:10Z [agent-fixer] Correction: the LOGIC-MEDIA-SEARCH-SCALING activity line above cites the short pre-commit hash 8e33d7a; the landed commit is 4c6dca8.
 - 2026-11-20T19:58:26Z [zed-agent (GPT-6 luna)] LOGIC-SCANNER-WRITE-FAILURES: committed remaining scanner changes as b1cb3f5 (task block updates had already landed); fix(scanner): propagate persistence failures and stop discovery.
 - 2026-11-20T19:58:26Z [zed-agent (GPT-6 luna)] UI-GENERAL-THUMBS-TOGGLE: Claimed (in_progress); guarding bitmapFor render paths on the store flag across catalog/albums/dashboard and wiring the predicate from the shell.
+- 2026-11-20T20:32:52Z [zed-agent (GPT-6 luna)] UI-GENERAL-THUMBS-TOGGLE: Done. ThumbsEnabled predicate guards bitmapFor on catalog/albums/dashboard (cached bitmaps hidden while off, no worker respawns, instant restore with no refetch); wired from the shell store; 4 regression tests; full suite, vet, MyGo vet, race green.
 - 2026-11-20T19:55:30Z [agent-fixer] Correction: the LOGIC-FILEOPS-NOREPLACE note above cites the short pre-commit hash 16aa934; the landed commit is aebf75e.
 - 2026-11-20T19:55:30Z [agent-fixer] LOGIC-FILEOPS-NOREPLACE: Done. MoveFileNoReplace (renameat2 RENAME*NOREPLACE on Linux, O_EXCL copy fallback elsewhere) + ErrDestinationExists; staging + upload retry on collision; TestMoveFileNoReplace*\* tests; suite/vet/gofmt green; commit aebf75e.
 - 2026-11-20T19:58:30Z [agent-fixer] Correction: the LOGIC-STAGING-CONSISTENCY note cites the short pre-commit hash 0a4e51b; the landed commit is 2f9df27.
 - 2026-11-20T19:58:30Z [agent-fixer] LOGIC-STAGING-CONSISTENCY: Done. Execute move DB failures (UpdatePath/MoveToAlbum/RemoveFromAlbum) mark op failed + expose in report.Errors + journal OldAlbumID; Rollback restores file + path + album; delete DeleteBatch failures mark failed; tests TestExecuteMoveDBFailureNotDoneAndRollbackRestores + TestExecuteDeleteDBFailureNotDone; fileops/server-mobile/storage tests, vet, gofmt green; commit 2f9df27.
 - 2026-11-20T20:05:30Z [agent-fixer] Correction: the LOGIC-MEDIA-HASH-UNIQUENESS note cites the short pre-commit hash 57d9401; the landed commit is b68cd67.
-- 2026-11-20T20:05:30Z [agent-fixer] LOGIC-MEDIA-HASH-UNIQUENESS: Done. Migration v3 dedupes pre-existing dup rows per file_hash (MIN(id) group) then drops idx_media_file_hash + creates UNIQUE idx_media_file_hash; insertBatch treats extended SQLITE_CONSTRAINT_UNIQUE (2067, errors.As *sqlite.Error) as duplicate and continues; tests TestInsertBatchDuplicateHashDedup/TestInsertBatchConcurrentDuplicateHash/TestMigrationDedupSQLLogic; suite -race vet gofmt green; commit b68cd67.
+- 2026-11-20T20:05:30Z [agent-fixer] LOGIC-MEDIA-HASH-UNIQUENESS: Done. Migration v3 dedupes pre-existing dup rows per file_hash (MIN(id) group) then drops idx_media_file_hash + creates UNIQUE idx_media_file_hash; insertBatch treats extended SQLITE_CONSTRAINT_UNIQUE (2067, errors.As \*sqlite.Error) as duplicate and continues; tests TestInsertBatchDuplicateHashDedup/TestInsertBatchConcurrentDuplicateHash/TestMigrationDedupSQLLogic; suite -race vet gofmt green; commit b68cd67.
 - 2026-11-20T20:05:30Z [agent-fixer] Phase 9 status sweep: LOGIC-STAGING-CONSISTENCY, LOGIC-FILEOPS-NOREPLACE, LOGIC-MEDIA-HASH-UNIQUENESS, LOGIC-THUMBNAIL-PIXEL-LIMIT, LOGIC-MEDIA-SEARCH-SCALING done by [agent-fixer]; LOGIC-SCANNER-WRITE-FAILURES done by [zed-agent (GPT-6 luna)].

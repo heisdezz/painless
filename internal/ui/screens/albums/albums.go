@@ -66,9 +66,13 @@ type Thumbnailer interface {
 
 // Options configures the album screen.
 type Options struct {
-	Albums        AlbumRepository
-	Media         MediaRepository
-	Thumbs        Thumbnailer
+	Albums AlbumRepository
+	Media  MediaRepository
+	Thumbs Thumbnailer
+	// ThumbsEnabled reports the live display-thumbnails setting; while it
+	// returns false, cards render without preview images and no fetch
+	// workers are scheduled. Nil means thumbnails are always enabled.
+	ThumbsEnabled func() bool
 	RefreshWindow func()
 	DriveRoot     string
 	ReadOnly      bool
@@ -82,6 +86,7 @@ type Screen struct {
 	albums        AlbumRepository
 	media         MediaRepository
 	thumbs        Thumbnailer
+	thumbsEnabled func() bool
 	refreshWindow func()
 	driveRoot     string
 	readOnly      bool
@@ -156,6 +161,7 @@ func New(opts Options) *Screen {
 		albums:        opts.Albums,
 		media:         opts.Media,
 		thumbs:        opts.Thumbs,
+		thumbsEnabled: opts.ThumbsEnabled,
 		refreshWindow: opts.RefreshWindow,
 		driveRoot:     opts.DriveRoot,
 		readOnly:      opts.ReadOnly || opts.Albums == nil,
@@ -357,6 +363,9 @@ func (s *Screen) requestRedraw() {
 // bitmapFor serves decoded member thumbnails from a UI-thread cache and loads
 // missing ones on a bounded worker pool, mirroring the catalog screen.
 func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
+	if s.thumbsDisabled() {
+		return nil
+	}
 	if bitmap, ok := s.bitmaps[item.FileHash]; ok {
 		return bitmap
 	}
@@ -401,4 +410,9 @@ func (s *Screen) bitmapFor(item domain.MediaItem) *mui.Bitmap {
 		services.Invalidate()
 	}(item.FileHash, item)
 	return nil
+}
+
+// thumbsDisabled reports whether the display-thumbnails setting is off.
+func (s *Screen) thumbsDisabled() bool {
+	return s.thumbsEnabled != nil && !s.thumbsEnabled()
 }
