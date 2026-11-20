@@ -31,6 +31,10 @@ type FileOpener interface {
 	ReadFile(relPath string) ([]byte, error)
 }
 
+// VideoOpener opens a video for the native player. uivideo.Open is the
+// default; tests inject one backed by a synthetic decoder.
+type VideoOpener func(path string) (*mui.VideoPlayer, error)
+
 // Source fetches media metadata if not already loaded.
 type Source interface {
 	GetByID(ctx context.Context, id int64) (*domain.MediaItem, error)
@@ -42,6 +46,8 @@ type Options struct {
 	DriveRootFunc DriveRoot
 	Throttler     Throttler
 	FileOpener    FileOpener
+	VideoOpener   VideoOpener
+	Autoplay      func() bool // nil means videos autoplay
 	Source        Source
 	RefreshWindow func()
 	OnClose       func()
@@ -53,6 +59,8 @@ type Screen struct {
 	driveRootFunc DriveRoot
 	throttler     Throttler
 	fileOpener    FileOpener
+	videoOpener   VideoOpener
+	autoplay      func() bool
 	source        Source
 	refreshWindow func()
 	onClose       func()
@@ -78,6 +86,21 @@ type Screen struct {
 	videoPlayer *mui.VideoPlayer
 	videoHash   string
 
+	// Video zoom: scale about the video box's top-left, with a pan that
+	// keeps the point under the pointer in place while zooming.
+	videoZoom float32
+	videoPanX float32
+	videoPanY float32
+
+	// Ctrl+drag pan: the press's last pointer point, and the pan to restore
+	// if the system cancels the gesture.
+	videoPointerDown bool
+	videoPanning     bool
+	videoDragX       float32
+	videoDragY       float32
+	videoPanStartX   float32
+	videoPanStartY   float32
+
 	// Scrub state: the slider holds its own value while dragging and seeks
 	// once on release so the player is not restarted every frame.
 	seekPos   float64
@@ -98,10 +121,13 @@ func New(opts Options) *Screen {
 		driveRootFunc: opts.DriveRootFunc,
 		throttler:     opts.Throttler,
 		fileOpener:    opts.FileOpener,
+		videoOpener:   opts.VideoOpener,
+		autoplay:      opts.Autoplay,
 		source:        opts.Source,
 		refreshWindow: opts.RefreshWindow,
 		onClose:       opts.OnClose,
 		drawerOpen:    true,
+		videoZoom:     1,
 	}
 }
 
