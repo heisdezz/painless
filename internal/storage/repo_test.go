@@ -2,8 +2,10 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -405,3 +407,127 @@ func benchmarkMediaRepoSearch(b *testing.B, search string) {
 
 func BenchmarkMediaRepoSearchPath(b *testing.B)     { benchmarkMediaRepoSearch(b, "IMG_0") }
 func BenchmarkMediaRepoSearchMetadata(b *testing.B) { benchmarkMediaRepoSearch(b, "note") }
+
+func TestInsertBatchDuplicateHashDedup(t *testing.T) {
+	db, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory failed: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewMediaRepo(db)
+	ctx := context.Background()
+
+	item := domain.MediaItem{FileHash: "hash-dup", OriginalRelativePath: "incoming/a.jpg", CurrentRelativePath: "incoming/a.jpg", FileSize: 10, MimeType: "image/jpeg", CreatedAt: time.Now()}
+	if _, err := repo.InsertBatch(ctx, []domain.MediaItem{item}); err != nil {
+		t.Fatalf("first insert failed: %v", err)
+	}
+
+	dup := item
+	dup.CurrentRelativePath = "incoming/a-copy.jpg"
+	if _, err := repo.InsertBatch(ctx, []domain.MediaItem{dup}); err != nil {
+		t.Fatalf("duplicate insert reported an error: %v", err)
+	}
+	if n := countMediaRows(t, db, "hash-dup"); n != 1 {
+		t.Fatalf("rows for hash-dup = %d, want 1", n)
+	}
+
+	other := domain.MediaItem{FileHash: "hash-other", OriginalRelativePath: "incoming/b.jpg", CurrentRelativePath: "incoming/b.jpg", FileSize: 20, MimeType: "image/jpeg", CreatedAt: time.Now()}
+	if _, err := repo.InsertBatch(ctx, []domain.MediaItem{other}); err != nil {
+		t.Fatalf("insert of a new hash failed: %v", err)
+	}
+	if n := countMediaRows(t, db, "hash-other"); n != 1 {
+		t.Fatalf("rows for hash-other = %d, want 1", n)
+	}
+}
+
+func TestInsertBatchConcurrentDuplicateHash(t *testing.T) {
+	db, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory failed: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewMediaRepo(db)
+	ctx := context.Background()
+
+	item := domain.MediaItem{FileHash: "hash-conc", OriginalRelativePath: "incoming/a.jpg", CurrentRelativePath: "incoming/a.jpg", FileSize: 10, MimeType: "image/jpeg", CreatedAt: time.Now()}
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			dup := item
+			dup.CurrentRelativePath = fmt.Sprintf("incoming/c%d.jpg", i)
+			if _, err := repo.InsertBatch(ctx, []domain.MediaItem{dup}); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent duplicate insert: %v", err)
+	}
+	if n := countMediaRows(t, db, item.FileHash); n != 1 {
+		t.Fatalf("rows for %q = %d, want 1", item.FileHash, n)
+	}
+}
+
+func TestMigrationDedupSQLLogic(t *testing.T) {
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE media_items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		file_hash TEXT NOT NULL,
+		current_relative_path TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-existing duplicates: two rows for hash "h1", one for "h2".
+	for _, tc := range []struct {
+		hash string
+		path string
+	}{
+		{"h1", "a.jpg"},
+		{"h1", "a-dup.jpg"},
+		{"h2", "b.jpg"},
+	} {
+		if _, err := db.Exec("INSERT INTO media_items(file_hash, current_relative_path) VALUES (?, ?)", tc.hash, tc.path); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// v3 statements: dedupe keeping the earliest row per hash, then
+	// enforce the unique index.
+	if _, err := db.Exec("DELETE FROM media_items WHERE id NOT IN (SELECT MIN(id) FROM media_items GROUP BY file_hash)"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM media_items").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("rows after dedup = %d, want 2", n)
+	}
+	var kept string
+	if err := db.QueryRow("SELECT current_relative_path FROM media_items WHERE file_hash = 'h1'").Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept != "a.jpg" {
+		t.Fatalf("kept row for h1 = %q, want a.jpg (earliest per hash)", kept)
+	}
+}
+
+func countMediaRows(t *testing.T, db *DB, hash string) int {
+	t.Helper()
+	var n int
+	if err := db.Raw().QueryRow("SELECT COUNT(*) FROM media_items WHERE file_hash = ?", hash).Scan(&n); err != nil {
+		t.Fatalf("count media by hash: %v", err)
+	}
+	return n
+}

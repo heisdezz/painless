@@ -548,14 +548,15 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-MEDIA-HASH-UNIQUENESS: Enforce Library Content-Deduplication Invariant
 
-- Status: in_progress
+- Status: done
 - Owner: [agent-fixer]
-- Updated: 2026-11-20T19:22:00Z
+- Updated: 2026-11-20T20:05:00Z
 - Depends on: LOGIC-DB-SQLITE, LOGIC-MEDIA-REPO, LOGIC-MOBILE-SYNC, LOGIC-SCANNER
 - Allowed paths/scope: `internal/storage/migrations/**`, `internal/storage/media_repo.go`, `internal/storage/repo_test.go`, `internal/server/mobile/handlers_upload.go`, `internal/server/mobile/upload_test.go`, `internal/scanner/**`
 - Acceptance: define and enforce whether the library stores only one row per SHA-256 hash; if uniqueness is intended, migration handles pre-existing duplicates safely and concurrent insert paths treat uniqueness conflicts as deduplication rather than data loss; tests cover duplicate and concurrent insert behavior.
 - Notes:
   - 2026-11-20: Review follow-up. The schema documents `file_hash` as SHA-256 but only creates a non-unique index, while upload/scanner paths use check-then-insert deduplication.
+  - 2026-11-20T20:05:00Z: Done by [agent-fixer]. Invariant defined and enforced: migration v3 dedupes pre-existing rows (`DELETE ... WHERE id NOT IN (SELECT MIN(id) FROM media_items GROUP BY file_hash)`) then replaces the non-unique `idx_media_file_hash` with a UNIQUE index on `media_items(file_hash)`. `MediaRepo.insertBatch` now detects the modernc driver's `SQLITE_CONSTRAINT_UNIQUE` (extended code 2067, matched via `errors.As` on `*sqlite.Error`) and `continue`s on the duplicate item instead of returning the error — the existing row wins, no data lost. Upload/scanner insert paths go through `insertBatch`/`GetByHash` and now dedupe the same way. Tests: `TestInsertBatchDuplicateHashDedup`, `TestInsertBatchConcurrentDuplicateHash` (8 goroutines inserting the same hash → no errors, 1 row), `TestMigrationDedupSQLLogic` (duplicate-rows SQL semantics on a pre-v3-shaped table). Full storage suite, `-race` on the new tests, `go vet`, gofmt green; commit 57d9401 (lands next).
 
 #### LOGIC-SCANNER-WRITE-FAILURES: Preserve and Report Failed Scan Batches
 

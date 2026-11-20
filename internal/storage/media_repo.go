@@ -3,9 +3,13 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"painless/internal/domain"
 )
@@ -36,6 +40,13 @@ func (r *MediaRepo) InsertScanBatch(ctx context.Context, items []domain.MediaIte
 		return nil, err
 	}
 	return inserted, nil
+}
+
+// isUniqueViolation reports whether err is the driver's unique-constraint
+// violation (modernc returns the extended SQLITE_CONSTRAINT_UNIQUE code).
+func isUniqueViolation(err error) bool {
+	var serr *sqlite.Error
+	return errors.As(err, &serr) && serr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
 }
 
 func (r *MediaRepo) insertBatch(ctx context.Context, items []domain.MediaItem, collect func(domain.MediaItem)) (int, error) {
@@ -77,6 +88,13 @@ func (r *MediaRepo) insertBatch(ctx context.Context, items []domain.MediaItem, c
 				createdAt.Format("2006-01-02 15:04:05"),
 			)
 			if err != nil {
+				if isUniqueViolation(err) {
+					// Library dedup invariant: one row per file_hash. A
+					// concurrent insert (or an upload of identical
+					// content) wins; this item is a duplicate, not a
+					// data-loss case.
+					continue
+				}
 				return err
 			}
 			if collect != nil {
