@@ -70,6 +70,13 @@ jobs:
             exit 1
           fi
 
+      # Image thumbnail tests encode WebP through ffmpeg, as the service does
+      # at runtime; GitHub's runners do not ship it by default.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Vet
         run: go vet ./...
 
