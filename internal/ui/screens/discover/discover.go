@@ -171,21 +171,25 @@ func (s *Screen) View(c *mui.Context) {
 
 	container := mui.Column(c).Fill().Padding(20, 24).Gap(16)
 	container.Children(func() {
-		// 1. Active drive banner and configurable album folder
-		s.driveBanner(c, tk)
-		s.scaffoldBanner(c, tk)
-		s.albumFolderCard(c, tk)
+		// 1. Banners, scanner controls and the ignorelist live in a capped
+		// scroll region: at zoom or in small windows they would otherwise
+		// push the staging table and the execute banner out of the viewport.
+		mui.Scroll(c).Shrink(1).MaxHeightPercent(50).Gap(16).Children(func() {
+			s.driveBanner(c, tk)
+			s.scaffoldBanner(c, tk)
+			s.albumFolderCard(c, tk)
 
-		// 2. Scanner controls, ignorelist and live telemetry side by side
-		mui.Row(c).Shrink(0).Gap(16).AlignItems(mui.Start).Children(func() {
-			mui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(16).Children(func() {
-				s.scanControls(c, tk)
-				s.ignoreList(c, tk)
+			// Scanner controls, ignorelist and live telemetry side by side
+			mui.Row(c).Shrink(0).Gap(16).AlignItems(mui.Start).Children(func() {
+				mui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(16).Children(func() {
+					s.scanControls(c, tk)
+					s.ignoreList(c, tk)
+				})
+				mui.Column(c).Width(280).Shrink(0).Children(func() { s.scannerStatus(c, tk) })
 			})
-			mui.Column(c).Width(280).Shrink(0).Children(func() { s.scannerStatus(c, tk) })
 		})
 
-		// 3. Virtual staging review table
+		// 2. Virtual staging review table
 		mui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
 			if !s.isExecuting {
 				s.stagingTable(c, tk)
