@@ -174,7 +174,13 @@ func (s *Screen) View(c *mui.Context) {
 		// 1. Banners, scanner controls and the ignorelist live in a capped
 		// scroll region: at zoom or in small windows they would otherwise
 		// push the staging table and the execute banner out of the viewport.
-		mui.Scroll(c).Shrink(1).MaxHeightPercent(50).Gap(16).Children(func() {
+		scroll := mui.Scroll(c).Shrink(1).MaxHeightPercent(50).Gap(16)
+		if s.StagedCount() == 0 {
+			// With nothing staged there is no staging table; let the scan
+			// section fill the window so no black bar shows below it.
+			scroll = scroll.Grow(1).MaxHeightPercent(100).Background(tk.BgLayout)
+		}
+		scroll.Children(func() {
 			s.driveBanner(c, tk)
 			s.scaffoldBanner(c, tk)
 			s.albumFolderCard(c, tk)
