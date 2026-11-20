@@ -101,9 +101,11 @@ type Screen struct {
 	integrityOK bool
 
 	// General tab state.
-	store        *state.Store
-	thumbsOn     bool
-	thumbsLastOn bool
+	store          *state.Store
+	thumbsOn       bool
+	thumbsLastOn   bool
+	autoplayOn     bool
+	autoplayLastOn bool
 
 	// mobile tab drafts, synced to the controller in syncMobile.
 	serverOn   bool
@@ -167,6 +169,8 @@ func New(opts Options) *Screen {
 	if s.store != nil {
 		s.thumbsOn = s.store.ThumbnailsEnabled()
 		s.thumbsLastOn = s.thumbsOn
+		s.autoplayOn = s.store.AutoplayEnabled()
+		s.autoplayLastOn = s.autoplayOn
 	}
 	if s.mobile != nil {
 		s.serverOn = s.mobile.Enabled()
@@ -196,6 +200,7 @@ func (s *Screen) View(c *mui.Context) {
 	s.drainAsync()
 	s.syncMobile()
 	s.syncThumbnails()
+	s.syncAutoplay()
 	mui.Column(c).Fill().Padding(0, 28, 40).Gap(16).Children(func() {
 		mui.Box(c).Height(1).FillWidth().Background(tk.Border)
 		nav.Tabs(c, &s.tab, nav.TabsProps{

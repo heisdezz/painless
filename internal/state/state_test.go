@@ -458,6 +458,21 @@ func TestBackScreen(t *testing.T) {
 	}
 }
 
+func TestAutoplayEnabledToggle(t *testing.T) {
+	st := NewStore()
+	if !st.AutoplayEnabled() {
+		t.Error("AutoplayEnabled = false on a new store, want true")
+	}
+	st.SetAutoplayEnabled(false)
+	if st.AutoplayEnabled() {
+		t.Error("AutoplayEnabled = true after SetAutoplayEnabled(false)")
+	}
+	st.SetAutoplayEnabled(true)
+	if !st.AutoplayEnabled() {
+		t.Error("AutoplayEnabled = false after SetAutoplayEnabled(true)")
+	}
+}
+
 func TestThumbnailsEnabledToggle(t *testing.T) {
 	st := NewStore()
 	if !st.ThumbnailsEnabled() {

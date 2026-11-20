@@ -45,9 +45,12 @@ func (a libraryActions) StartScan()                         { a.store.Navigate(s
 // shows its empty state until the library controller binds a drive.
 func newViewer(store *state.Store, redraw func(), root string, source viewer.Source, throttle viewer.Throttler) *viewer.Screen {
 	return viewer.New(viewer.Options{
-		DriveRoot:     root,
-		Source:        source,
-		Throttler:     throttle,
+		DriveRoot: root,
+		Source:    source,
+		Throttler: throttle,
+		Autoplay: func() bool {
+			return store == nil || store.AutoplayEnabled()
+		},
 		RefreshWindow: redraw,
 		OnClose: func() {
 			if store != nil {

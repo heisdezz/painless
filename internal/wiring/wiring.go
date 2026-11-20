@@ -10,6 +10,8 @@ import (
 // Controllers bundles the real settings screen controllers backed by the
 // service layer. Build once with New at app startup; Close on shutdown.
 type Controllers struct {
+	store *state.Store
+
 	Backups *Backups
 	Mobile  *Mobile
 	GDrive  *GDrive
@@ -20,6 +22,7 @@ type Controllers struct {
 // without re-wiring.
 func New(store *state.Store) *Controllers {
 	return &Controllers{
+		store:   store,
 		Backups: NewBackups(store),
 		Mobile:  NewMobile(store),
 		GDrive:  NewGDrive(store),
@@ -42,5 +45,6 @@ func (c *Controllers) SettingsScreen(logs *logging.Logger, toast func(level doma
 		GDrive:  c.GDrive,
 		Logs:    logs,
 		Toast:   toast,
+		Store:   c.store,
 	})
 }

@@ -27,6 +27,12 @@ func (st *Store) ThumbnailsEnabled() bool { return st.State.ThumbnailsEnabled() 
 // SetThumbnailsEnabled toggles the display of media thumbnails.
 func (st *Store) SetThumbnailsEnabled(enabled bool) { st.State.SetThumbnailsEnabled(enabled) }
 
+// AutoplayEnabled reports whether videos start playing when opened.
+func (st *Store) AutoplayEnabled() bool { return st.State.AutoplayEnabled() }
+
+// SetAutoplayEnabled toggles autoplay for videos opened in the viewer.
+func (st *Store) SetAutoplayEnabled(enabled bool) { st.State.SetAutoplayEnabled(enabled) }
+
 // ApplyDrives replaces the drive list and publishes EventDrivesChanged,
 // plus EventActiveDriveChange when the active drive changed (including
 // fallback selection after the active drive was removed).

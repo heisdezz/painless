@@ -502,6 +502,35 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
+func TestGeneralTabTogglesAutoplay(t *testing.T) {
+	store := state.NewStore()
+	tt := mui.NewTester(New(Options{Store: store}).View, 1000, 800)
+	if err := tt.Click("General"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+
+	if !tt.HasText("Autoplay videos") {
+		t.Fatalf("missing autoplay switch label; texts = %q", tt.Texts())
+	}
+	var switches []mui.AccessInfo
+	for _, info := range tt.AccessAll() {
+		if info.Role == mui.RoleSwitch {
+			switches = append(switches, info)
+		}
+	}
+	if len(switches) < 2 {
+		t.Fatalf("need two General switches, got %d", len(switches))
+	}
+	autoplay := switches[1]
+	tt.ClickAt(autoplay.Bounds.X+autoplay.Bounds.W/2, autoplay.Bounds.Y+autoplay.Bounds.H/2)
+	tt.Frame()
+
+	if store.AutoplayEnabled() {
+		t.Fatal("AutoplayEnabled = true after clicking the switch, want false")
+	}
+}
+
 func TestGeneralTabTogglesThumbnails(t *testing.T) {
 	store := state.NewStore()
 	tt := mui.NewTester(New(Options{Store: store}).View, 1000, 800)

@@ -24,6 +24,7 @@ type AppState struct {
 	jobs       map[string]*Job
 	jobOrder   []string
 	thumbnails bool
+	autoplay   bool
 }
 
 // New creates an initialized AppState with the catalog screen active.
@@ -33,6 +34,7 @@ func New() *AppState {
 		selection:  NewSelection(),
 		jobs:       map[string]*Job{},
 		thumbnails: true,
+		autoplay:   true,
 	}
 }
 
@@ -47,6 +49,20 @@ func (s *AppState) ThumbnailsEnabled() bool {
 func (s *AppState) SetThumbnailsEnabled(enabled bool) {
 	s.mu.Lock()
 	s.thumbnails = enabled
+	s.mu.Unlock()
+}
+
+// AutoplayEnabled reports whether videos start playing when opened.
+func (s *AppState) AutoplayEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.autoplay
+}
+
+// SetAutoplayEnabled toggles autoplay for videos opened in the viewer.
+func (s *AppState) SetAutoplayEnabled(enabled bool) {
+	s.mu.Lock()
+	s.autoplay = enabled
 	s.mu.Unlock()
 }
 
