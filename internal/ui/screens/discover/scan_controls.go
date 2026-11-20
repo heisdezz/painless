@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/egoist/mygo"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -33,6 +34,10 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 					Size:        lobetheme.Small,
 				}).Width(360)
 			})
+
+			action.Button(c, "Pick location", action.ButtonProps{
+				Size: lobetheme.Small,
+			}).OnClick(s.pickScanTarget)
 
 			if !scanning {
 				action.Button(c, "Start Scan", action.ButtonProps{
@@ -115,6 +120,45 @@ func (s *Screen) scanControls(c *mui.Context, tk *lobetheme.Tokens) {
 			})
 		}
 	})
+}
+
+// pickScanTarget opens the platform-native location picker for the scan
+// target (macOS, Windows and Linux) and stores the chosen path.
+func (s *Screen) pickScanTarget() {
+	picker := s.directoryPicker
+	if picker == nil {
+		picker = func(defaultPath string) (string, error) {
+			return openDirectoryChooser("Choose location", defaultPath)
+		}
+	}
+	s.mu.RLock()
+	current := s.targetPath
+	root := s.driveRoot
+	s.mu.RUnlock()
+	if current == "" && root != "" {
+		current = root
+	}
+	go func() {
+		path, err := picker(current)
+		if err != nil || path == "" {
+			return
+		}
+		s.publish(func() { s.targetPath = path })
+		s.requestRedraw()
+	}()
+}
+
+// openDirectoryChooser shows the native directory chooser for the platform.
+func openDirectoryChooser(title, defaultPath string) (string, error) {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Title:       title,
+		DefaultPath: defaultPath,
+		Directory:   true,
+	})
+	if err != nil || len(paths) == 0 {
+		return "", err
+	}
+	return paths[0], nil
 }
 
 func (s *Screen) startScan() {

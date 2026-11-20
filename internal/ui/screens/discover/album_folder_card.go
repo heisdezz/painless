@@ -3,7 +3,6 @@ package discover
 import (
 	"fmt"
 
-	"github.com/egoist/mygo"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -83,15 +82,7 @@ func (s *Screen) chooseAlbumFolder() {
 	picker := s.directoryPicker
 	if picker == nil {
 		picker = func(defaultPath string) (string, error) {
-			paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-				Title:       "Choose album folder",
-				DefaultPath: defaultPath,
-				Directory:   true,
-			})
-			if err != nil || len(paths) == 0 {
-				return "", err
-			}
-			return paths[0], nil
+			return openDirectoryChooser("Choose album folder", defaultPath)
 		}
 	}
 	current := s.AlbumFolder()

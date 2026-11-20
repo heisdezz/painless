@@ -12,7 +12,9 @@ The Discover / Scanner view is where users initiate filesystem scanning of an ex
 
 - Target Folder Selector:
   - `field.Input` displaying chosen path.
-  - `action.Button` ("Browse Folder...") invoking native file dialog.
+  - `action.Button` ("Pick location") invoking the native location picker
+    (`mygo.Dialog.Open` with `Directory: true`, available on macOS, Windows and
+    Linux); the chosen path replaces the typed path.
 - Ignore List:
   - `display.Tag` chips displaying ignored folder patterns (`node_modules`, `.git`, etc.) with remove buttons.
   - `field.Input` to add new ignore patterns.
@@ -64,7 +66,7 @@ The Discover / Scanner view is where users initiate filesystem scanning of an ex
 
 ## 4. Acceptance Criteria
 
-- [ ] Folder picker opens native dialog and updates target path.
+- [x] Folder picker opens native dialog and updates target path.
 - [ ] Scanning displays real-time `feedback.Progress` bar and file counters.
 - [ ] Staging table allows assigning destination albums via `field.Select`.
 - [ ] "Consolidate & Execute" presents confirmation `overlay.Modal` and commits moves to disk.

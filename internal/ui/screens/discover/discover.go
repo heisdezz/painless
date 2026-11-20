@@ -72,7 +72,8 @@ type Options struct {
 	OnAlbumFolderChanged func(path string)
 	// CatalogCount reports how many items are indexed on the active drive.
 	CatalogCount func() int
-	// DirectoryPicker opens a native folder chooser. Injected in tests.
+	// DirectoryPicker opens a native location picker for the album folder and
+	// the scan target. Injected in tests.
 	DirectoryPicker func(defaultPath string) (string, error)
 }
 

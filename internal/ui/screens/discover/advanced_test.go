@@ -46,6 +46,42 @@ func TestIgnoreListPresetsAndReset(t *testing.T) {
 	}
 }
 
+func TestScanTargetPickerUpdatesPath(t *testing.T) {
+	root := t.TempDir()
+	chosen := filepath.Join(root, "picks")
+	if err := os.MkdirAll(chosen, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var gotDefault string
+	updates := make(chan func(), 8)
+	screen := New(Options{
+		DriveRoot: root,
+		DirectoryPicker: func(def string) (string, error) {
+			gotDefault = def
+			return chosen, nil
+		},
+		Update: func(apply func()) { updates <- apply },
+	})
+	defer func() { <-screen.Close() }()
+
+	tt := mui.NewTester(screen.View, 1000, 800)
+	if err := tt.Click("Pick location"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case apply := <-updates:
+		apply()
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the screen update")
+	}
+	if got := screen.TargetPath(); got != chosen {
+		t.Fatalf("target path = %q, want %q", got, chosen)
+	}
+	if gotDefault != root {
+		t.Fatalf("picker default = %q, want %q", gotDefault, root)
+	}
+}
+
 func TestScannerStatusPanel(t *testing.T) {
 	screen := New(Options{CatalogCount: func() int { return 15278 }})
 	tt := mui.NewTester(screen.View, 1000, 800)
