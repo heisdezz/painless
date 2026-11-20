@@ -203,6 +203,20 @@ func (r *MediaRepo) Count(ctx context.Context) (int64, error) {
 }
 
 // List queries paginated media items according to filtering and sorting parameters.
+
+// minFTSSearch is the shortest search string routed to the FTS index. The
+// trigram tokenizer only matches 3+ character terms, so shorter searches
+// keep the LIKE fallback.
+const minFTSSearch = 3
+
+// ftsMatchQuery quotes a user search string as one FTS5 phrase for the
+// trigram index: a case-insensitive substring match over the indexed path
+// and metadata text — the same semantics the previous LIKE clause had.
+// Embedded double quotes are escaped.
+func ftsMatchQuery(search string) string {
+	return `"` + strings.ReplaceAll(search, `"`, `""`) + `"`
+}
+
 func (r *MediaRepo) List(ctx context.Context, params domain.MediaListParams) (*domain.MediaListPage, error) {
 	var whereClauses []string
 	var args []any
@@ -213,9 +227,17 @@ func (r *MediaRepo) List(ctx context.Context, params domain.MediaListParams) (*d
 	}
 
 	if params.Search != "" {
-		whereClauses = append(whereClauses, "(current_relative_path LIKE ? OR metadata_json LIKE ?)")
-		pattern := "%" + params.Search + "%"
-		args = append(args, pattern, pattern)
+		if len(params.Search) >= minFTSSearch {
+			whereClauses = append(whereClauses,
+				"rowid IN (SELECT rowid FROM media_items_fts WHERE media_items_fts MATCH ?)")
+			args = append(args, ftsMatchQuery(params.Search))
+		} else {
+			// Short searches keep the LIKE fallback (the trigram index only
+			// matches 3+ character terms).
+			whereClauses = append(whereClauses, "(current_relative_path LIKE ? OR metadata_json LIKE ?)")
+			pattern := "%" + params.Search + "%"
+			args = append(args, pattern, pattern)
+		}
 	}
 
 	switch params.Filter {

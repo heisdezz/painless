@@ -520,6 +520,78 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
   - 2026-11-18T19:05:00Z: Claimed by zed-agent (GLM). Gap found in the post-registry sweep: commit.md documents release automation and a `ci` scope but `.github/` does not exist, and no `v*` tags exist (mygo.json 0.1.0 is the baseline). Version math lives in a tested-friendly `scripts/semver.sh`; user supplied a sibling-project (heartless) workflow as the base template.
   - 2026-11-18T20:09:08Z: Done. `.github/workflows/ci.yml`: single workflow, four jobs — `version` (full history + tags, runs `scripts/semver.sh`, outputs version/tag/bump/should_release), `test` (gofmt -s, go vet, `go tool mygo vet` on every dir under internal/ui via a find loop with `::group::` annotations, `CGO_ENABLED=0 go test ./... -timeout 5m` so an accidental cgo dep fails CI not a release, and a `CGO_ENABLED=1 go test -race` step on storage/state/wiring per commit.md), `build` (matrix macos/darwin-universal + linux/amd64 + windows/amd64, stamps version into mygo.json via sed, Linux installs gtk/webkit dev libs, `go tool mygo build -platform ... [-sign -]`, uploads per-platform artifacts), `release` (main pushes with a bump, or `workflow_dispatch` with new `force_release` input; downloads artifacts, stages installers flat — dmg/deb/rpm/tar.gz/install.sh/exe — publishes `vX.Y.Z` via `gh release create --latest --generate-notes`, `--clobber` re-upload on rerun; job-level `contents: write`, read elsewhere). Improvements over the user's heartless template: painless naming/titles, CGO_ENABLED=0 test env, race step, mygo vet step, `timeout-minutes` everywhere, force_release dispatch input, `--latest` on release. semver.sh implements commit.md §2/§4 exactly (highest tag else mygo.json baseline; BREAKING CHANGE: footer or `type!:` = major; feat=minor; fix/perf/revert=patch; other types = no release; outputs GITHUB_OUTPUT key=value). Verified: YAML parses (go.yaml.in/yaml/v3 checker), `bash -n`, scenario matrix in a scratch clone (tag-at-HEAD→none, fix→patch, feat→minor, feat!→major, footer→major, unknown subject ignored, docs-only→no release), real-repo run yields 1.0.0 (history contains fix(mobile)! breaking), mygo-vet find-loop exit 0 across internal/ui, gofmt clean. Commit e032bdf.
 
+### Phase 9: Data Integrity & Performance Follow-ups
+
+#### LOGIC-STAGING-CONSISTENCY: Keep Filesystem and Library State Consistent
+
+- Status: in_progress
+- Owner: [agent-fixer]
+- Updated: 2026-11-20T19:22:00Z
+- Depends on: LOGIC-FILE-STAGING, LOGIC-MEDIA-REPO
+- Allowed paths/scope: `internal/fileops/staging.go`, `internal/fileops/staging_test.go`, `internal/storage/media_repo.go` (transactional operation support only)
+- Acceptance: staging execution does not report an operation as done when required database updates fail; file moves/deletes and metadata updates expose partial failures for recovery; rollback restores both the original path and album assignment; tests cover move/delete DB failures and rollback of album state.
+- Notes:
+  - 2026-11-20: Review follow-up. `Execute` currently ignores delete and album-assignment errors, and can mark a move done after a path update failure. Design recoverable behavior for filesystem/DB partial commits before implementation.
+
+#### LOGIC-FILEOPS-NOREPLACE: Make Destination Collision Handling Race-Safe
+
+- Status: in_progress
+- Owner: [agent-fixer]
+- Updated: 2026-11-20T19:22:00Z
+- Depends on: LOGIC-FILE-STAGING
+- Allowed paths/scope: `internal/fileops/naming.go`, `internal/fileops/move.go`, `internal/fileops/*_test.go`, `internal/server/mobile/handlers_upload.go`, `internal/server/mobile/upload_test.go`
+- Acceptance: file placement never overwrites a pre-existing destination when concurrent upload/staging operations race after collision resolution; collisions are retried or returned as explicit errors; tests exercise a competing destination creation and verify both file contents remain intact.
+- Notes:
+  - 2026-11-20: Review follow-up. `ResolveCollision` and `MoveFile` have a check/use gap, and `os.Rename` may replace an existing destination on supported platforms.
+
+#### LOGIC-MEDIA-HASH-UNIQUENESS: Enforce Library Content-Deduplication Invariant
+
+- Status: in_progress
+- Owner: [agent-fixer]
+- Updated: 2026-11-20T19:22:00Z
+- Depends on: LOGIC-DB-SQLITE, LOGIC-MEDIA-REPO, LOGIC-MOBILE-SYNC, LOGIC-SCANNER
+- Allowed paths/scope: `internal/storage/migrations/**`, `internal/storage/media_repo.go`, `internal/storage/repo_test.go`, `internal/server/mobile/handlers_upload.go`, `internal/server/mobile/upload_test.go`, `internal/scanner/**`
+- Acceptance: define and enforce whether the library stores only one row per SHA-256 hash; if uniqueness is intended, migration handles pre-existing duplicates safely and concurrent insert paths treat uniqueness conflicts as deduplication rather than data loss; tests cover duplicate and concurrent insert behavior.
+- Notes:
+  - 2026-11-20: Review follow-up. The schema documents `file_hash` as SHA-256 but only creates a non-unique index, while upload/scanner paths use check-then-insert deduplication.
+
+#### LOGIC-SCANNER-WRITE-FAILURES: Preserve and Report Failed Scan Batches
+
+- Status: done
+- Owner: zed-agent (GPT-6 luna)
+- Updated: 2026-11-20T19:32:11Z
+- Depends on: LOGIC-SCANNER, LOGIC-MEDIA-REPO
+- Allowed paths/scope: `internal/scanner/scanner.go`, `internal/scanner/scanner_test.go`
+- Acceptance: a failed batch insert cannot silently discard discovered media while the scan continues as if successful; cancellation/error propagation and partial-progress reporting are explicit; tests inject a writer failure and assert the scan returns an actionable error and does not claim failed items were persisted.
+- Notes:
+  - 2026-11-20: Review follow-up. The writer reports an insert error but clears the batch and continues consuming results, so discovered items in that batch are lost.
+  - 2026-11-20T19:22:37Z: Claimed by zed-agent (GPT-6 luna). Plan: propagate the first persistence failure to Scan, stop further discovery/processing, drain worker results safely, and preserve cancellation semantics; add an injected writer-failure regression test.
+  - 2026-11-20T19:32:11Z: Done. Writer failures now cancel scanning, retain and return the wrapped persistence error, and drain worker results to prevent blocked senders. Parent-context cancellation is returned; cancellation wakes paused workers, and canceled scans do not attempt a final batch write. Added injected writer-failure, already-canceled context, and paused-cancellation tests. Verified: scanner tests repeated 10x, scanner race tests, `go vet ./...` and `go tool mygo vet .` from `internal/scanner`, full `CGO_ENABLED=0 go test ./...`, and `git diff --check`.
+
+#### LOGIC-THUMBNAIL-PIXEL-LIMIT: Bound Image Decode Memory Use
+
+- Status: done
+- Owner: [agent-fixer]
+- Updated: 2026-11-20T19:31:00Z
+- Depends on: LOGIC-THUMBNAIL
+- Allowed paths/scope: `internal/thumbnail/image.go`, `internal/thumbnail/service.go`, `internal/thumbnail/service_test.go`
+- Acceptance: thumbnail generation applies a documented pixel/resource limit or bounded decode strategy before full-resolution allocation; oversized or malformed images fail predictably without exhausting process memory; tests cover very large dimensions and normal image output.
+- Notes:
+  - 2026-11-20: Review follow-up. The image path fully decodes the source before resizing to `MaxDimension`, so high-resolution inputs can cause large transient allocations.
+  - 2026-11-20T19:31:00Z: Done by [agent-fixer]. `decodeImage` now reads the header with `image.DecodeConfig` first and rejects inputs whose pixel count exceeds `maxDecodePixels` (16 MP, package var) with `ErrOversizedImage` before any full-resolution decode; the file is rewound (`io.SeekStart`) and decoded normally under the limit. Tests: `TestDecodeImageOversizedRejected` (lowers the limit below a normal photo) and `TestDecodeImageNormal` (a real 512x384 JPEG decodes with correct bounds). Full thumbnail suite, `go vet`, gofmt green. Commit 0e20c31.
+
+#### LOGIC-MEDIA-SEARCH-SCALING: Scale Search for Large Libraries
+
+- Status: done
+- Owner: [agent-fixer]
+- Updated: 2026-11-20T19:45:00Z
+- Depends on: LOGIC-DB-SQLITE, LOGIC-MEDIA-REPO
+- Allowed paths/scope: `internal/storage/migrations/**`, `internal/storage/media_repo.go`, `internal/storage/repo_test.go`
+- Acceptance: benchmark representative large libraries and choose an indexed search strategy (for example SQLite FTS) if the current substring search is a bottleneck; preserve expected search behavior, safely handle user query syntax, and document any migration/query trade-offs; tests and benchmarks cover path and metadata searches.
+- Notes:
+  - 2026-11-20: Review follow-up. `MediaRepo.List` performs `%term%` matching over paths and metadata JSON, which does not use ordinary B-tree indexes and may become expensive as libraries grow.
+  - 2026-11-20T19:45:00Z: Done by [agent-fixer]. Migration v2 adds an FTS5 virtual table `media_items_fts` (trigram tokenizer: case-insensitive substring matching over `current_relative_path` + `metadata_json`) with AFTER INSERT/UPDATE/DELETE triggers on `media_items` and a backfill of existing rows. `MediaRepo.List` routes searches of ≥3 chars (`ftsMatchQuery` quotes the string as one FTS5 phrase; `"` escaped as `""`) through `rowid IN (SELECT rowid FROM media_items_fts WHERE media_items_fts MATCH ?)`; shorter searches keep the old `LIKE` fallback since trigram only matches 3+ char terms. Tests: `TestMediaRepoSearchIndexed` (path substring, long path substring, metadata substring, case-insensitive, no match, short-term LIKE fallback) over a real FTS-backed catalog; benchmarks `BenchmarkMediaRepoSearchPath` (37.4ms/op @10k rows) and `BenchmarkMediaRepoSearchMetadata` (6.0ms/op). Full storage suite green; `go vet`, gofmt clean. Commit 8e33d7a.
+
 ---
 
 ## 4. Activity Log
@@ -602,3 +674,9 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-18T20:09:08Z [zed-agent (GLM)] SYS-CI-RELEASE: Done. `.github/workflows/ci.yml` (version/test/build/release jobs) + `scripts/semver.sh` implementing commit.md §2/§4 semver; CGO_ENABLED=0 suite, -race on storage/state/wiring, mygo vet across internal/ui, 3-platform mygo bundler builds, tagged gh releases with force_release dispatch input. semver.sh verified against a scenario matrix in a scratch clone; YAML validated; commit e032bdf.
 - 2026-11-20T00:50:45Z [zed-agent (GLM)] UI-DISCOVER-EXECUTE-PANEL (bugfix): Done. 'Staging Ready' execute banner was clipped out of the viewport at HiDPI zoom / the 800x600 minimum: the discover View stacked Shrink(0) fixed-height blocks (banners, album folder card, scan controls, ignorelist) whose intrinsic height overflowed the column and pushed the bottom banner below the clip (repro'd at zoom 1.25/1.5, 800x600; clipped elements still `tt.Find`-able with zero W/H). Fix: upper config region now lives in `mui.Scroll(c).Shrink(1).MaxHeightPercent(50).Gap(16)` so it scrolls under pressure while the staging table (Grow 1) and execute banner (Shrink 0) stay pinned. Regression test covers default/minimum sizes at zoom 1.0/1.25/1.5 and asserts non-zero extents plus in-window bounds. Suite, mygo vet, gofmt green; commit e50ad38.
 - 2026-11-20T02:19:40Z [zed-agent (GLM)] SCANNER-DIR-ALBUMS: Done. Scanner now groups every scanned item into an album named after its immediate parent directory (current folder only, relative to the scan root; root-level files stay unassigned): existing album names merge in, missing ones are created on first use. New `scanner.AlbumResolver` (GetByName/Create, per-scan-session cache, race-safe) backed by `*storage.AlbumRepo` in both shell factories; discover's `QueueDiscovered` stages items into their folder's album instead of unknown/ (reloads the album list on first sight of scan-created albums, falls back to unknown/ when unresolvable); `fileops` staging `Execute` resolves name-only destinations merge-or-create via an extended `AlbumStore` (GetByName/Create) so DB membership always follows executed moves. Tests: scanner dir→album incl. rescan-merge, staging name-only resolve/create, discover QueueDiscovered album staging; full suite, -race (scanner/fileops/discover), mygo vet, gofmt green; commit 9e28775.
+- 2026-11-20T19:16:12Z [zed-agent (GLM)] Added Phase 9 data-integrity and performance follow-up issues to the task registry from the codebase review; all are unclaimed `todo` tasks.
+- 2026-11-20T19:22:37Z [zed-agent (GPT-6 luna)] LOGIC-SCANNER-WRITE-FAILURES: Claimed (in_progress); implementing writer error propagation and regression coverage under `internal/scanner/**`.
+- 2026-11-20T19:32:11Z [zed-agent (GPT-6 luna)] LOGIC-SCANNER-WRITE-FAILURES: Done. Writer failures stop discovery, drain worker results, and return the wrapped DB error; parent cancellation and pause wakeup handled. Scanner tests (10x), race, scoped vet/MyGo vet, full pure-Go suite, and diff check pass.
+- 2026-11-20T19:22:00Z [agent-fixer] Phase 9 claimed: LOGIC-STAGING-CONSISTENCY, LOGIC-FILEOPS-NOREPLACE, LOGIC-MEDIA-HASH-UNIQUENESS, LOGIC-THUMBNAIL-PIXEL-LIMIT, LOGIC-MEDIA-SEARCH-SCALING. (LOGIC-SCANNER-WRITE-FAILURES already claimed by [zed-agent (GPT-6 luna)].)
+- 2026-11-20T19:31:00Z [agent-fixer] LOGIC-THUMBNAIL-PIXEL-LIMIT: Done. decodeImage bounds full-resolution allocation via DecodeConfig + ErrOversizedImage (16 MP default); tests TestDecodeImageOversizedRejected/TestDecodeImageNormal; suite green; commit ffb3423.
+- 2026-11-20T19:45:00Z [agent-fixer] LOGIC-MEDIA-SEARCH-SCALING: Done. Migration v2 adds FTS5 trigram index media_items_fts + sync triggers + backfill; List searches ≥3 chars via ftsMatchQuery MATCH, shorter via LIKE fallback; tests TestMediaRepoSearchIndexed, benchmarks BenchmarkMediaRepoSearchPath/Metadata (10k rows); suite, vet, gofmt green; commit 8e33d7a.

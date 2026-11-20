@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -296,3 +297,111 @@ func BenchmarkMediaList10kRows(b *testing.B) {
 		}
 	}
 }
+
+func TestMediaRepoSearchIndexed(t *testing.T) {
+	db, err := OpenMemory()
+	if err != nil {
+		t.Fatalf("OpenMemory failed: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewMediaRepo(db)
+	ctx := context.Background()
+
+	items := []domain.MediaItem{
+		{FileHash: "h1", OriginalRelativePath: "photos/vacation-beach.jpg", CurrentRelativePath: "photos/vacation-beach.jpg", FileSize: 100, MimeType: "image/jpeg", CreatedAt: time.Now()},
+		{FileHash: "h2", OriginalRelativePath: "videos/hiking.mp4", CurrentRelativePath: "videos/hiking.mp4", FileSize: 200, MimeType: "video/mp4", CreatedAt: time.Now().Add(-time.Minute)},
+		{FileHash: "h3", OriginalRelativePath: "photos/IMG_0001.JPG", CurrentRelativePath: "photos/IMG_0001.JPG", FileSize: 50, MimeType: "image/jpeg", MetadataJSON: `{"camera":"Sony"}`, CreatedAt: time.Now().Add(-2 * time.Minute)},
+	}
+	if _, err := repo.InsertBatch(ctx, items); err != nil {
+		t.Fatalf("InsertBatch failed: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		search string
+		want   []string
+	}{
+		{"path substring", "beach", []string{"photos/vacation-beach.jpg"}},
+		{"long path substring", "vacation-beach", []string{"photos/vacation-beach.jpg"}},
+		{"metadata substring", "Sony", []string{"photos/IMG_0001.JPG"}},
+		{"case insensitive", "VAC", []string{"photos/vacation-beach.jpg"}},
+		{"no match", "zebra", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			page, err := repo.List(ctx, domain.MediaListParams{Limit: 10, Search: tc.search})
+			if err != nil {
+				t.Fatalf("List search=%q: %v", tc.search, err)
+			}
+			got := make([]string, 0, len(page.Items))
+			for _, item := range page.Items {
+				got = append(got, item.CurrentRelativePath)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("search=%q items = %v, want %v", tc.search, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("search=%q items = %v, want %v", tc.search, got, tc.want)
+				}
+			}
+		})
+	}
+
+	// Short searches fall back to the LIKE path and keep matching.
+	page, err := repo.List(ctx, domain.MediaListParams{Limit: 10, Search: "ac"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 { // "vacation-beach.jpg" contains "ac"
+		t.Fatalf("short search total = %d, want 1", page.Total)
+	}
+}
+
+// benchmarkMediaRepoSearch seeds a representative library and measures the
+// search box: "IMG_0" matches by path, "note" matches by metadata.
+func benchmarkMediaRepoSearch(b *testing.B, search string) {
+	db, err := OpenMemory()
+	if err != nil {
+		b.Fatalf("OpenMemory failed: %v", err)
+	}
+	defer db.Close()
+
+	repo := NewMediaRepo(db)
+	ctx := context.Background()
+
+	const total = 10000
+	var items []domain.MediaItem
+	for i := 0; i < total; i++ {
+		items = append(items, domain.MediaItem{
+			FileHash:             fmt.Sprintf("hash-%d", i),
+			OriginalRelativePath: filepath.Join("library", fmt.Sprintf("sub%02d", i%50), fmt.Sprintf("IMG_%05d.JPG", i)),
+			CurrentRelativePath:  filepath.Join("photos", fmt.Sprintf("sub%02d", i%50), fmt.Sprintf("IMG_%05d.JPG", i)),
+			FileSize:             int64(1024 + i%1000),
+			MimeType:             "image/jpeg",
+			CreatedAt:            time.Now(),
+		})
+	}
+	if _, err := repo.InsertBatch(ctx, items); err != nil {
+		b.Fatalf("seed: %v", err)
+	}
+	for i := 0; i < total/10; i++ {
+		if _, err := db.Raw().ExecContext(ctx,
+			"UPDATE media_items SET metadata_json = ? WHERE id = ?",
+			fmt.Sprintf(`{"camera":"Canon","note":"photo number %d"}`, i), i+1); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		page, err := repo.List(ctx, domain.MediaListParams{Limit: 10, Search: search})
+		if err != nil || page.Total == 0 {
+			b.Fatalf("benchmark search %q failed: err=%v total=%d", search, err, page.Total)
+		}
+	}
+}
+
+func BenchmarkMediaRepoSearchPath(b *testing.B)     { benchmarkMediaRepoSearch(b, "IMG_0") }
+func BenchmarkMediaRepoSearchMetadata(b *testing.B) { benchmarkMediaRepoSearch(b, "note") }
