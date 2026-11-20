@@ -38,6 +38,30 @@ func TestServiceGetThumbnailsDisabled(t *testing.T) {
 	}
 }
 
+func TestDecodeImageOversizedRejected(t *testing.T) {
+	orig := maxDecodePixels
+	maxDecodePixels = 100 // below a normal photo's pixel count
+	t.Cleanup(func() { maxDecodePixels = orig })
+
+	path := filepath.Join(t.TempDir(), "big.jpg")
+	writeTestJPEG(t, path, 512, 384)
+	if _, err := decodeImage(path); !errors.Is(err, ErrOversizedImage) {
+		t.Fatalf("decodeImage err = %v, want ErrOversizedImage", err)
+	}
+}
+
+func TestDecodeImageNormal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "small.jpg")
+	writeTestJPEG(t, path, 512, 384)
+	img, err := decodeImage(path)
+	if err != nil {
+		t.Fatalf("decodeImage err = %v", err)
+	}
+	if img.Bounds().Dx() != 512 || img.Bounds().Dy() != 384 {
+		t.Fatalf("bounds = %v, want 512x384", img.Bounds())
+	}
+}
+
 func writeTestJPEG(t testing.TB, path string, width, height int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
