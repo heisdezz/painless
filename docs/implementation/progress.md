@@ -614,6 +614,22 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 ---
 
+### Phase 11: Mobile API Compatibility
+
+#### LOGIC-MOBILE-DSTREAM-COMPAT: D-Stream Mobile LAN API Compatibility Layer
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-20T22:55:00Z
+- Depends on: LOGIC-MOBILE-SYNC, LOGIC-MEDIA-SERVER, LOGIC-MEDIA-REPO
+- Allowed paths/scope: `internal/server/mobile/**`, `internal/server/stream/**`, `docs/implementation/progress.md`
+- Acceptance: the existing D-Stream mobile companion can pair and operate against the Painless server. Add `GET/PATCH/DELETE /api/albums/{id}` (DELETE supports `?permanent=true`), `GET /api/media/{id}/details`, re-point `GET /api/media/{id}` to stream the original file with byte ranges, `GET /api/thumbnail/{id}`, `POST /api/media` (multipart `file`+`albumId` fields and raw `?albumId=&filename=` body, 201 with the new item), `PATCH /api/media/{id}` (`{"albumId":2}` move), `DELETE /api/media/{id}`. Accept `albumId`/`sortBy`/`sortOrder` query aliases alongside the snake_case names. Keep `/api/upload`, `/thumbnail`, `/stream`, `/api/status`, `/api/ping` working unchanged. Tests cover every new route and alias; full suite, race, mygo vet, gofmt green.
+- Notes:
+  - 2026-11-20: Created from a user-driven endpoint audit against the source app's Mobile LAN API spec (`dr_projects/drive/README.md`): D-Stream clients currently break on missing album/media CRUD routes, JSON-instead-of-stream semantics on `GET /api/media/{id}`, differing upload transport, thumbnail path, and snake_case query params.
+  - 2026-11-20T22:55:00Z: Done by [zed-agent (GLM)]. stream: extracted shared `serveItem`/`serveThumbnailID` helpers and registered D-Stream routes `GET /api/media/{id}` (ServeContent with byte ranges) and `GET /api/thumbnail/{id}` inside the playback router. mobile: `GET /api/albums/{id}`, `PATCH /api/albums/{id}` (name/description pointers, nil = keep), `DELETE /api/albums/{id}` with `?permanent=true` (permanent first removes physical files via paged Media.List + sandboxed `stream.ResolvePath` + `os.Remove`, then `Albums.Delete(id, true)`), media details moved to `GET /api/media/{id}/details`, `POST /api/media` (multipart `file` part + `albumId` form field captured via MultipartReader, or raw body with `?albumId=&filename=`; shares `persistUpload` through a new `finishUpload` helper), `PATCH /api/media/{id}` (`{"albumId":n}` move via MoveToAlbum, null unassigns via RemoveFromAlbum), `DELETE /api/media/{id}` (sandboxed file removal + DeleteBatch). `parseMediaListParams` accepts `albumId`/`sortBy`/`sortOrder` aliases via `firstOf`. Native `/api/upload`, `/thumbnail?mediaId`, `/stream?path`, `/api/status`, `/api/ping` unchanged. Tests: new `compat_test.go` (album get/patch/delete + permanent file removal, id streaming + range 206, thumbnail by id, details, multipart + raw uploads, move/unassign/delete media, param aliases) and updated `TestMediaListAndGet` for the new stream semantics. Verified: `CGO_ENABLED=0 go test ./...`, `go test -race ./internal/server/...`, `go vet`, `go tool mygo vet .`, `gofmt -s -w` all green.
+
+---
+
 ## 4. Activity Log
 
 - 2026-11-17T18:00:00Z [system] Progress tracker established. Multi-agent collision avoidance rules, implementation standards, and task registry initialized.
@@ -711,3 +727,5 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 - 2026-11-20T20:05:30Z [agent-fixer] Correction: the LOGIC-MEDIA-HASH-UNIQUENESS note cites the short pre-commit hash 57d9401; the landed commit is b68cd67.
 - 2026-11-20T20:05:30Z [agent-fixer] LOGIC-MEDIA-HASH-UNIQUENESS: Done. Migration v3 dedupes pre-existing dup rows per file_hash (MIN(id) group) then drops idx_media_file_hash + creates UNIQUE idx_media_file_hash; insertBatch treats extended SQLITE_CONSTRAINT_UNIQUE (2067, errors.As \*sqlite.Error) as duplicate and continues; tests TestInsertBatchDuplicateHashDedup/TestInsertBatchConcurrentDuplicateHash/TestMigrationDedupSQLLogic; suite -race vet gofmt green; commit b68cd67.
 - 2026-11-20T20:05:30Z [agent-fixer] Phase 9 status sweep: LOGIC-STAGING-CONSISTENCY, LOGIC-FILEOPS-NOREPLACE, LOGIC-MEDIA-HASH-UNIQUENESS, LOGIC-THUMBNAIL-PIXEL-LIMIT, LOGIC-MEDIA-SEARCH-SCALING done by [agent-fixer]; LOGIC-SCANNER-WRITE-FAILURES done by [zed-agent (GPT-6 luna)].
+- 2026-11-20T22:10:00Z [zed-agent (GLM)] LOGIC-MOBILE-DSTREAM-COMPAT: Claimed (in_progress); adding D-Stream Mobile LAN API compatibility routes (album/media CRUD, id-based streaming + thumbnail, D-Stream upload transport, camelCase param aliases) under internal/server/mobile + stream.
+- 2026-11-20T22:55:00Z [zed-agent (GLM)] LOGIC-MOBILE-DSTREAM-COMPAT: Done. D-Stream Mobile LAN API compatibility: album/media CRUD routes, id-based streaming+thumbnail via stream helpers, D-Stream multipart/raw upload transport on POST /api/media, albumId/sortBy/sortOrder param aliases; native routes unchanged. Suite, race, vet, mygo vet, gofmt green.

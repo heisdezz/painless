@@ -179,7 +179,7 @@ func mustGet(t *testing.T, url string) *http.Response {
 }
 
 func TestMediaListAndGet(t *testing.T) {
-	_, srv, media, _ := newTestEnv(t)
+	root, srv, media, _ := newTestEnv(t)
 	ts := serve(t, srv)
 
 	items := []domain.MediaItem{
@@ -187,6 +187,14 @@ func TestMediaListAndGet(t *testing.T) {
 		{FileHash: "h2", OriginalRelativePath: "unknown/b.mp4", CurrentRelativePath: "unknown/b.mp4", FileSize: 20, MimeType: "video/mp4"},
 	}
 	if _, err := media.InsertBatch(context.Background(), items); err != nil {
+		t.Fatal(err)
+	}
+	// Physical payloads for the streaming route.
+	if err := os.MkdirAll(filepath.Join(root, "unknown"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const payload = "fake-jpeg-bytes-for-range-serving"
+	if err := os.WriteFile(filepath.Join(root, "unknown", "a.jpg"), []byte(payload), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,12 +208,40 @@ func TestMediaListAndGet(t *testing.T) {
 		t.Errorf("total = %d, want 2", all.Total)
 	}
 
-	item := decode[domain.MediaItem](t, mustGet(t, fmt.Sprintf("%s/api/media/%d", ts.URL, page.Items[0].ID)))
+	// /api/media/{id}/details returns the catalog record.
+	item := decode[domain.MediaItem](t, mustGet(t, fmt.Sprintf("%s/api/media/%d/details", ts.URL, page.Items[0].ID)))
 	if item.FileHash != "h1" {
 		t.Errorf("fetched item = %+v", item)
 	}
 
-	resp := mustGet(t, ts.URL+"/api/media/999")
+	// /api/media/{id} streams the original file with Range support.
+	streamed, err := http.Get(fmt.Sprintf("%s/api/media/%d", ts.URL, page.Items[0].ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(streamed.Body)
+	streamed.Body.Close()
+	if streamed.StatusCode != http.StatusOK || string(body) != payload {
+		t.Errorf("stream status = %d, body = %q", streamed.StatusCode, body)
+	}
+	if streamed.Header.Get("Accept-Ranges") != "bytes" {
+		t.Errorf("Accept-Ranges = %q, want bytes", streamed.Header.Get("Accept-Ranges"))
+	}
+
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/media/%d", ts.URL, page.Items[0].ID), nil)
+	req.Header.Set("Range", "bytes=5-9")
+	ranged, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rbody, _ := io.ReadAll(ranged.Body)
+	ranged.Body.Close()
+	if ranged.StatusCode != http.StatusPartialContent || string(rbody) != payload[5:10] {
+		t.Errorf("range status = %d, body = %q", ranged.StatusCode, rbody)
+	}
+
+	// The details route distinguishes unknown ids with 404 too.
+	resp := mustGet(t, ts.URL+"/api/media/999/details")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown id status = %d, want 404", resp.StatusCode)

@@ -27,10 +27,15 @@ type Routes struct {
 	Thumbnails Thumbnailer
 }
 
-// Handler builds the playback router. The host owns authentication and CORS.
+// Handler builds the playback router; exposed for tests and embedding.
+// Besides the query-parameter playback routes, it also serves the
+// D-Stream-compatible ID-addressed routes GET /api/media/{id} (original
+// file with byte ranges) and GET /api/thumbnail/{id}.
 func (s Routes) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /stream", s.handleStream)
 	mux.HandleFunc("GET /thumbnail", s.handleThumbnail)
+	mux.HandleFunc("GET /api/media/{id}", s.handleMediaByID)
+	mux.HandleFunc("GET /api/thumbnail/{id}", s.handleThumbnailByID)
 	return mux
 }

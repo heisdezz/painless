@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -56,8 +57,6 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cap the whole request body just above the per-file limit to leave
-	// room for multipart framing overhead.
 	r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxUploadBytes+64<<10)
 
 	src, filename, cleanup, err := s.openUploadSource(r)
@@ -65,6 +64,42 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.finishUpload(w, r, root, src, filename, cleanup, albumID, album)
+}
+
+// handleCreateMedia uploads a file into an album (D-Stream companion
+// compatibility). Multipart requests carry the payload in a `file` part
+// and the target album in an `albumId` form field; raw bodies stream the
+// bytes with ?albumId=<id>&filename=<name> query parameters. The native
+// /api/upload keeps its header-based transport.
+func (s *Server) handleCreateMedia(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Media == nil || s.opts.Albums == nil {
+		writeErr(w, http.StatusServiceUnavailable, "library not configured")
+		return
+	}
+	root := s.root()
+	if root == "" {
+		writeErr(w, http.StatusServiceUnavailable, "no active drive")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxUploadBytes+64<<10)
+
+	src, filename, form, cleanup, err := s.openCreateMediaSource(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	albumID, album, ok := s.resolveCreateMediaAlbum(w, r, form)
+	if !ok {
+		return
+	}
+	s.finishUpload(w, r, root, src, filename, cleanup, albumID, album)
+}
+
+// finishUpload validates the filename, persists the upload against the
+// drive, and writes the shared 201/duplicate response.
+func (s *Server) finishUpload(w http.ResponseWriter, r *http.Request, root string, src io.Reader, filename string, cleanup func(), albumID *int64, album *domain.Album) {
 	defer func() {
 		if cleanup != nil {
 			cleanup()
@@ -147,6 +182,84 @@ func (s *Server) openUploadSource(r *http.Request) (src io.Reader, filename stri
 		return nil, "", nil, errors.New("X-File-Name header required for raw uploads")
 	}
 	return r.Body, name, nil, nil
+}
+
+// openCreateMediaSource is the D-Stream variant of openUploadSource: it
+// additionally captures non-file multipart parts (form fields such as
+// albumId) and takes the raw-upload filename from the query string.
+func (s *Server) openCreateMediaSource(r *http.Request) (src io.Reader, filename string, form url.Values, cleanup func(), err error) {
+	ct := r.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(ct)
+
+	if strings.HasPrefix(mediaType, "multipart/") {
+		mr, mErr := r.MultipartReader()
+		if mErr != nil {
+			return nil, "", nil, nil, errors.New("invalid multipart body")
+		}
+		form = url.Values{}
+		for {
+			part, pErr := mr.NextPart()
+			if errors.Is(pErr, io.EOF) {
+				return nil, "", nil, nil, errors.New("multipart body contains no file part")
+			}
+			if pErr != nil {
+				return nil, "", nil, nil, errors.New("invalid multipart body")
+			}
+			if part.FileName() != "" {
+				name := strings.TrimSpace(r.Header.Get("X-File-Name"))
+				if name == "" {
+					name = part.FileName()
+				}
+				return part, name, form, func() { _ = part.Close() }, nil
+			}
+			val, rErr := io.ReadAll(io.LimitReader(part, 64<<10))
+			_ = part.Close()
+			if rErr == nil && part.FormName() != "" {
+				form.Set(part.FormName(), string(val))
+			}
+		}
+	}
+
+	name := strings.TrimSpace(r.URL.Query().Get("filename"))
+	if name == "" {
+		name = strings.TrimSpace(r.Header.Get("X-File-Name"))
+	}
+	if name == "" {
+		return nil, "", nil, nil, errors.New("filename query parameter required for raw uploads")
+	}
+	return r.Body, name, url.Values{}, nil, nil
+}
+
+// resolveCreateMediaAlbum resolves the upload target from the query
+// albumId (raw uploads), the multipart albumId form field, or the
+// X-Album-ID header, in that order. ok=false means the response was
+// written.
+func (s *Server) resolveCreateMediaAlbum(w http.ResponseWriter, r *http.Request, form url.Values) (*int64, *domain.Album, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("albumId"))
+	if raw == "" && form != nil {
+		raw = strings.TrimSpace(form.Get("albumId"))
+	}
+	if raw == "" {
+		raw = strings.TrimSpace(r.Header.Get("X-Album-ID"))
+	}
+	if raw == "" {
+		return nil, nil, true
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		writeErr(w, http.StatusBadRequest, "albumId must be a positive integer")
+		return nil, nil, false
+	}
+	album, err := s.opts.Albums.GetByID(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "album lookup failed")
+		return nil, nil, false
+	}
+	if album == nil {
+		writeErr(w, http.StatusNotFound, "album not found")
+		return nil, nil, false
+	}
+	return &id, album, true
 }
 
 // uploadError is a handler-level failure carrying its HTTP status.

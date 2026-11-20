@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"errors"
+	"painless/internal/domain"
 
 	"io/fs"
 	"mime"
@@ -19,12 +20,8 @@ const thumbnailCache = "private, no-cache"
 // handleStream serves a cataloged media file with full Range support via
 // http.ServeContent. Query: path=<drive-relative path>.
 func (s Routes) handleStream(w http.ResponseWriter, r *http.Request) {
-	root := ""
-	if s.DriveRoot != nil {
-		root = s.DriveRoot()
-	}
-	if root == "" || s.Resolver == nil {
-		http.Error(w, "library resolver not configured", http.StatusServiceUnavailable)
+	root, ok := s.sandbox(w)
+	if !ok {
 		return
 	}
 	relPath := r.URL.Query().Get("path")
@@ -44,7 +41,60 @@ func (s Routes) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not in library", http.StatusNotFound)
 		return
 	}
+	s.serveItem(w, r, root, item)
+}
 
+// handleMediaByID serves the original file for GET /api/media/{id} with
+// full Range support (D-Stream companion compatibility).
+func (s Routes) handleMediaByID(w http.ResponseWriter, r *http.Request) {
+	root, ok := s.sandbox(w)
+	if !ok {
+		return
+	}
+	item, ok := s.itemByID(w, r)
+	if !ok {
+		return
+	}
+	s.serveItem(w, r, root, item)
+}
+
+// sandbox reports the active drive root, writing a 503 when playback is
+// not configured. ok=false means the response was written.
+func (s Routes) sandbox(w http.ResponseWriter) (string, bool) {
+	root := ""
+	if s.DriveRoot != nil {
+		root = s.DriveRoot()
+	}
+	if root == "" || s.Resolver == nil {
+		http.Error(w, "library resolver not configured", http.StatusServiceUnavailable)
+		return "", false
+	}
+	return root, true
+}
+
+// itemByID resolves the {id} path value to a cataloged item, writing the
+// error response. ok=false means the response was written.
+func (s Routes) itemByID(w http.ResponseWriter, r *http.Request) (*domain.MediaItem, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid media id", http.StatusBadRequest)
+		return nil, false
+	}
+	item, err := s.Resolver.GetByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "library lookup failed", http.StatusInternalServerError)
+		return nil, false
+	}
+	if item == nil {
+		http.Error(w, "not in library", http.StatusNotFound)
+		return nil, false
+	}
+	return item, true
+}
+
+// serveItem streams a cataloged item's file from the drive with full
+// Range support via http.ServeContent.
+func (s Routes) serveItem(w http.ResponseWriter, r *http.Request, root string, item *domain.MediaItem) {
 	path, err := ResolvePath(root, item.CurrentRelativePath)
 	if err != nil {
 		resolveError(w, err)
@@ -75,13 +125,29 @@ func (s Routes) handleStream(w http.ResponseWriter, r *http.Request) {
 
 // handleThumbnail serves the cached WebP thumbnail for mediaId=.
 func (s Routes) handleThumbnail(w http.ResponseWriter, r *http.Request) {
-	if s.Thumbnails == nil || s.Resolver == nil || s.DriveRoot == nil || s.DriveRoot() == "" {
-		http.Error(w, "thumbnails not configured", http.StatusServiceUnavailable)
-		return
-	}
 	id, err := strconv.ParseInt(r.URL.Query().Get("mediaId"), 10, 64)
 	if err != nil || id <= 0 {
 		http.Error(w, "invalid mediaId", http.StatusBadRequest)
+		return
+	}
+	s.serveThumbnailID(w, r, id)
+}
+
+// handleThumbnailByID serves the cached WebP thumbnail for
+// GET /api/thumbnail/{id} (D-Stream companion compatibility).
+func (s Routes) handleThumbnailByID(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid media id", http.StatusBadRequest)
+		return
+	}
+	s.serveThumbnailID(w, r, id)
+}
+
+// serveThumbnailID resolves one media ID and writes its thumbnail bytes.
+func (s Routes) serveThumbnailID(w http.ResponseWriter, r *http.Request, id int64) {
+	if s.Thumbnails == nil || s.Resolver == nil || s.DriveRoot == nil || s.DriveRoot() == "" {
+		http.Error(w, "thumbnails not configured", http.StatusServiceUnavailable)
 		return
 	}
 	item, err := s.Resolver.GetByID(r.Context(), id)

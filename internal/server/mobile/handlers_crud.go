@@ -2,13 +2,18 @@ package mobile
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/server/stream"
 )
 
 // statusResponse is the /api/status payload used for pairing screens.
@@ -105,8 +110,163 @@ func (s *Server) handleCreateAlbum(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, album)
 }
 
+// handleGetAlbum returns one album by ID (D-Stream compatibility).
+func (s *Server) handleGetAlbum(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Albums == nil {
+		writeErr(w, http.StatusServiceUnavailable, "library not configured")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeErr(w, http.StatusBadRequest, "invalid album id")
+		return
+	}
+	album, err := s.opts.Albums.GetByID(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "album lookup failed")
+		return
+	}
+	if album == nil {
+		writeErr(w, http.StatusNotFound, "album not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, album)
+}
+
+// updateAlbumRequest is the PATCH /api/albums/{id} body; nil fields keep
+// their current values (D-Stream sends name and/or description).
+type updateAlbumRequest struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+}
+
+// handleUpdateAlbum renames an album and/or edits its description
+// (D-Stream compatibility).
+func (s *Server) handleUpdateAlbum(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Albums == nil {
+		writeErr(w, http.StatusServiceUnavailable, "library not configured")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeErr(w, http.StatusBadRequest, "invalid album id")
+		return
+	}
+	var req updateAlbumRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	current, err := s.opts.Albums.GetByID(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "album lookup failed")
+		return
+	}
+	if current == nil {
+		writeErr(w, http.StatusNotFound, "album not found")
+		return
+	}
+	name := current.Name
+	if req.Name != nil {
+		name = strings.TrimSpace(*req.Name)
+		if !domain.ValidateAlbumName(name) {
+			writeErr(w, http.StatusBadRequest, "invalid album name")
+			return
+		}
+	}
+	description := current.Description
+	if req.Description != nil {
+		description = req.Description
+	}
+	if err := s.opts.Albums.Update(r.Context(), domain.EditAlbumInput{
+		ID:          id,
+		NewName:     name,
+		Description: description,
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "album update failed")
+		return
+	}
+	updated, err := s.opts.Albums.GetByID(r.Context(), id)
+	if err != nil || updated == nil {
+		writeErr(w, http.StatusInternalServerError, "album update failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleDeleteAlbum removes an album (D-Stream compatibility). Without
+// ?permanent=true its media items are unassigned back to Unsorted Media;
+// with it, the cataloged media records and their physical files are
+// removed.
+func (s *Server) handleDeleteAlbum(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Albums == nil || s.opts.Media == nil {
+		writeErr(w, http.StatusServiceUnavailable, "library not configured")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeErr(w, http.StatusBadRequest, "invalid album id")
+		return
+	}
+	permanent := r.URL.Query().Get("permanent") == "true"
+	if permanent {
+		if err := s.removeAlbumFiles(r, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "album file cleanup failed")
+			return
+		}
+	}
+	affected, err := s.opts.Albums.Delete(r.Context(), id, permanent)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "album deletion failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deleted":        id,
+		"permanent":      permanent,
+		"media_affected": affected,
+	})
+}
+
+// removeAlbumFiles deletes the physical files of an album's media items
+// before a permanent album deletion. Best effort per file; only paths
+// inside the drive sandbox are touched.
+func (s *Server) removeAlbumFiles(r *http.Request, albumID int64) error {
+	root := s.root()
+	if root == "" {
+		return nil
+	}
+	const pageSize = 500
+	for offset := 0; ; offset += pageSize {
+		page, err := s.opts.Media.List(r.Context(), domain.MediaListParams{
+			AlbumID: &albumID,
+			Limit:   pageSize,
+			Offset:  offset,
+		})
+		if err != nil {
+			return err
+		}
+		if len(page.Items) == 0 {
+			return nil
+		}
+		for i := range page.Items {
+			rel := page.Items[i].CurrentRelativePath
+			if rel == "" {
+				continue
+			}
+			path, err := stream.ResolvePath(root, rel)
+			if err != nil {
+				continue
+			}
+			if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+		}
+	}
+}
+
 // handleListMedia serves paginated media queries.
-// Query: limit, offset, search, album_id, filter, sort_by, sort_order.
+// Query: limit, offset, search, album_id (or albumId), filter,
+// sort_by (or sortBy), sort_order (or sortOrder).
 func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Media == nil {
 		writeErr(w, http.StatusServiceUnavailable, "library not configured")
@@ -126,6 +286,17 @@ func (s *Server) handleListMedia(w http.ResponseWriter, r *http.Request) {
 		page.Items = []domain.MediaItem{}
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// firstOf returns the first non-empty query value, letting D-Stream
+// clients use camelCase names alongside the native snake_case ones.
+func firstOf(q url.Values, names ...string) string {
+	for _, name := range names {
+		if v := q.Get(name); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // parseMediaListParams converts query parameters into MediaListParams,
@@ -153,7 +324,7 @@ func parseMediaListParams(r *http.Request) (domain.MediaListParams, error) {
 		}
 		params.Offset = offset
 	}
-	if raw := q.Get("album_id"); raw != "" {
+	if raw := firstOf(q, "album_id", "albumId"); raw != "" {
 		id, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || id <= 0 {
 			return params, fmt.Errorf("album_id must be a positive integer")
@@ -168,7 +339,7 @@ func parseMediaListParams(r *http.Request) (domain.MediaListParams, error) {
 			return params, fmt.Errorf("unknown filter %q", raw)
 		}
 	}
-	if raw := q.Get("sort_by"); raw != "" {
+	if raw := firstOf(q, "sort_by", "sortBy"); raw != "" {
 		switch domain.MediaSortBy(raw) {
 		case domain.SortByDate, domain.SortByName, domain.SortBySize:
 			params.SortBy = domain.MediaSortBy(raw)
@@ -176,7 +347,7 @@ func parseMediaListParams(r *http.Request) (domain.MediaListParams, error) {
 			return params, fmt.Errorf("unknown sort_by %q", raw)
 		}
 	}
-	if raw := q.Get("sort_order"); raw != "" {
+	if raw := firstOf(q, "sort_order", "sortOrder"); raw != "" {
 		switch domain.SortOrder(raw) {
 		case domain.SortOrderAsc, domain.SortOrderDesc:
 			params.SortOrder = domain.SortOrder(raw)
@@ -187,8 +358,8 @@ func parseMediaListParams(r *http.Request) (domain.MediaListParams, error) {
 	return params, nil
 }
 
-// handleGetMedia returns one item with parsed metadata.
-func (s *Server) handleGetMedia(w http.ResponseWriter, r *http.Request) {
+// handleGetMediaDetails returns one item with parsed metadata.
+func (s *Server) handleGetMediaDetails(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Media == nil {
 		writeErr(w, http.StatusServiceUnavailable, "library not configured")
 		return

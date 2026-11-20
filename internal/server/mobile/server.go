@@ -118,6 +118,11 @@ func (s *Server) cors(next http.Handler) http.Handler {
 }
 
 // Handler builds the routing table; exposed for tests and embedding.
+//
+// Alongside the native Painless API it serves the D-Stream Mobile LAN
+// compatibility surface: full album/media CRUD under /api/albums/{id}
+// and /api/media/{id}, ID-based streaming and thumbnails, and uploads
+// via POST /api/media with D-Stream's multipart/raw transports.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -126,8 +131,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ping", s.handlePing)
 	mux.Handle("GET /api/albums", guard(s.handleListAlbums))
 	mux.Handle("POST /api/albums", guard(s.handleCreateAlbum))
+	mux.Handle("GET /api/albums/{id}", guard(s.handleGetAlbum))
+	mux.Handle("PATCH /api/albums/{id}", guard(s.handleUpdateAlbum))
+	mux.Handle("DELETE /api/albums/{id}", guard(s.handleDeleteAlbum))
 	mux.Handle("GET /api/media", guard(s.handleListMedia))
-	mux.Handle("GET /api/media/{id}", guard(s.handleGetMedia))
+	mux.Handle("GET /api/media/{id}/details", guard(s.handleGetMediaDetails))
+	mux.Handle("POST /api/media", guard(s.handleCreateMedia))
+	mux.Handle("PATCH /api/media/{id}", guard(s.handleMoveMedia))
+	mux.Handle("DELETE /api/media/{id}", guard(s.handleDeleteMedia))
 	mux.Handle("POST /api/upload", guard(s.handleUpload))
 
 	playback := stream.Routes{DriveRoot: s.root, Thumbnails: s.opts.Thumbnails}
@@ -135,8 +146,13 @@ func (s *Server) Handler() http.Handler {
 		playback.Resolver = s.opts.Media
 	}
 	mediaHandler := playback.Handler()
+	// Playback routes live in the stream package: path-based /stream,
+	// query-based /thumbnail, and the ID-addressed /api/media/{id} file
+	// stream and /api/thumbnail/{id}.
 	mux.Handle("GET /stream", guard(mediaHandler.ServeHTTP))
 	mux.Handle("GET /thumbnail", guard(mediaHandler.ServeHTTP))
+	mux.Handle("GET /api/media/{id}", guard(mediaHandler.ServeHTTP))
+	mux.Handle("GET /api/thumbnail/{id}", guard(mediaHandler.ServeHTTP))
 
 	return s.cors(mux)
 }
