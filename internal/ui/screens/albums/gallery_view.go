@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/egoist/mygo/plugins/glass"
 	mui "github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -17,52 +18,58 @@ import (
 )
 
 func (s *Screen) galleryView(c *mui.Context, tk *lobetheme.Tokens) {
-	// Toolbar: quiet search, grow spacer, one primary action.
-	mui.Row(c).Shrink(0).Gap(12).AlignItems(mui.Center).Children(func() {
-		field.SearchBar(c, &s.searchQuery, field.SearchBarProps{
-			Placeholder: "Filter albums...",
-			Variant:     field.InputFilled,
-			Size:        lobetheme.Small,
-		}).Width(280)
-		mui.Box(c).Grow(1)
-		action.Button(c, "New Album", action.ButtonProps{
-			Variant: action.Primary,
-			Size:    lobetheme.Small,
-		}).Disabled(s.readOnly).OnClick(func() { s.openCreateModal() })
-	})
-
-	filtered := s.getFilteredSummaries()
-	if len(filtered) == 0 {
-		if s.albumsLoading && len(s.summaries) == 0 {
-			s.gallerySkeleton(c)
-			return
-		}
-		mui.Scroll(c).Grow(1).Basis(0).Children(func() {
-			mui.Column(c).Fill().Center().Padding(40).Gap(12).Children(func() {
-				display.Empty(c, display.EmptyProps{
-					Icon:        lucide.Images(),
-					Title:       "No albums yet",
-					Description: "Organize your photos and videos into structured collections on your external drive.",
+	// The gallery scrolls under the toolbar: a bar in normal flow would clip
+	// the cards at the scroll's edge and leave nothing behind the glass.
+	mui.Box(c).Grow(1).Basis(0).Children(func() {
+		filtered := s.getFilteredSummaries()
+		if len(filtered) == 0 {
+			if s.albumsLoading && len(s.summaries) == 0 {
+				s.gallerySkeleton(c)
+			} else {
+				mui.Scroll(c).Fill().Padding(64, 0, 0).Children(func() {
+					mui.Column(c).Fill().Center().Gap(12).Children(func() {
+						display.Empty(c, display.EmptyProps{
+							Icon:        lucide.Images(),
+							Title:       "No albums yet",
+							Description: "Organize your photos and videos into structured collections on your external drive.",
+						})
+						action.Button(c, "Create Your First Album", action.ButtonProps{
+							Variant: action.Primary,
+							Size:    lobetheme.Middle,
+						}).Disabled(s.readOnly).OnClick(func() { s.openCreateModal() })
+					})
 				})
-				action.Button(c, "Create Your First Album", action.ButtonProps{
-					Variant: action.Primary,
-					Size:    lobetheme.Middle,
-				}).Disabled(s.readOnly).OnClick(func() { s.openCreateModal() })
-			})
-		})
-		return
-	}
-
-	mui.Scroll(c).Grow(1).Basis(0).Children(func() {
-		// Responsive equal columns: cards stretch to fill the content width.
-		layout.Grid(c, layout.GridProps{
-			MaxItemWidth: 220,
-			MaxColumns:   6,
-			Gap:          12,
-		}).Children(func() {
-			for index, sum := range filtered {
-				s.albumCard(c, tk, sum, index)
 			}
+		} else {
+			mui.Scroll(c).Fill().Padding(64, 0, 0).ScrollbarInsets(64, 0, 0).Children(func() {
+				// Responsive equal columns: cards stretch to fill the content width.
+				layout.Grid(c, layout.GridProps{
+					MaxItemWidth: 220,
+					MaxColumns:   6,
+					Gap:          12,
+				}).Children(func() {
+					for index, sum := range filtered {
+						s.albumCard(c, tk, sum, index)
+					}
+				})
+			})
+		}
+
+		// Toolbar: quiet search, grow spacer, one primary action. Built last so
+		// it paints above the cards passing behind the liquid-glass pane;
+		// padding gives the controls room inside its bezel.
+		mui.Row(c).Absolute().Top(0).Left(0).Right(0).Gap(12).AlignItems(mui.Center).
+			Padding(10, 12).Radius(tk.BorderRadius).Material(glass.Glass{}).Children(func() {
+			field.SearchBar(c, &s.searchQuery, field.SearchBarProps{
+				Placeholder: "Filter albums...",
+				Variant:     field.InputFilled,
+				Size:        lobetheme.Small,
+			}).Width(280)
+			mui.Box(c).Grow(1)
+			action.Button(c, "New Album", action.ButtonProps{
+				Variant: action.Primary,
+				Size:    lobetheme.Small,
+			}).Disabled(s.readOnly).OnClick(func() { s.openCreateModal() })
 		})
 	})
 }
@@ -71,7 +78,7 @@ func (s *Screen) galleryView(c *mui.Context, tk *lobetheme.Tokens) {
 // loads: album-card-shaped placeholders with a cover block and text rows.
 func (s *Screen) gallerySkeleton(c *mui.Context) {
 	tk := lobetheme.TokensOf(c)
-	mui.Scroll(c).Grow(1).Basis(0).Label("albums-loading").Children(func() {
+	mui.Scroll(c).Fill().Padding(64, 0, 0).Label("albums-loading").Children(func() {
 		layout.Grid(c, layout.GridProps{
 			MaxItemWidth: 220,
 			MaxColumns:   6,
