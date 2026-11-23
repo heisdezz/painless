@@ -54,8 +54,15 @@ type Options struct {
 	// background for newly uploaded files.
 	Thumbnails ThumbnailWarmer
 	// DriveInfo, when set, supplies the active drive snapshot reported by
-	// /api/status.
+	// /api/status and /api/info.
 	DriveInfo func() *domain.DriveInfo
+	// LibraryStats, when set, supplies the library summary reported by
+	// /api/info. Nil omits the stats object.
+	LibraryStats func() *LibraryStats
+	// DatabaseSnapshot, when set, produces a consistent SQLite snapshot
+	// path for /download/db and a cleanup func the server calls once the
+	// response is written. Nil serves the live database file directly.
+	DatabaseSnapshot func(ctx context.Context) (path string, cleanup func(), err error)
 	// MaxUploadBytes caps one upload. Zero selects DefaultMaxUploadBytes.
 	MaxUploadBytes int64
 }
@@ -129,6 +136,11 @@ func (s *Server) Handler() http.Handler {
 	guard := s.authGuard()
 	mux.Handle("GET /api/status", guard(s.handleStatus))
 	mux.HandleFunc("GET /api/ping", s.handlePing)
+	mux.Handle("GET /{$}", guard(s.handleInfo))
+	mux.Handle("GET /api/info", guard(s.handleInfo))
+	mux.Handle("GET /api/db/stats", guard(s.handleInfo))
+	mux.Handle("GET /download/db", guard(s.handleDownloadDB))
+	mux.Handle("GET /api/db/download", guard(s.handleDownloadDB))
 	mux.Handle("GET /api/albums", guard(s.handleListAlbums))
 	mux.Handle("POST /api/albums", guard(s.handleCreateAlbum))
 	mux.Handle("GET /api/albums/{id}", guard(s.handleGetAlbum))

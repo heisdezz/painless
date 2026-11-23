@@ -647,7 +647,25 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 ---
 
+#### LOGIC-MOBILE-DB-DOWNLOAD: D-Stream /api/info + /download/db Compatibility
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-23T15:45:00Z
+- Depends on: LOGIC-MOBILE-DSTREAM-COMPAT
+- Allowed paths/scope: `internal/server/mobile/**`, `internal/wiring/**`, `docs/implementation/logic/07-mobile-sync-api.md`, `docs/implementation/progress.md`
+- Acceptance: D-Stream mobile clients can discover the server and download the library. `GET /api/info` (aliases `/` and `/api/db/stats`) returns the D-Stream info payload (`status`, `server`, `drive_name`, `drive_path`, `download_url`, `server_ip`, `server_port`, `stats` with total_items/images/videos/albums/tags/db_size_bytes/db_exists). `GET /download/db` (alias `/api/db/download`) serves a consistent SQLite snapshot (`application/x-sqlite3`, attachment, byte-range capable); HEAD serves metadata without snapshotting. Both follow the read-auth policy. Tests cover info shape, snapshot download round-trip reopening as SQLite, and HEAD; suite, vet, mygo vet, gofmt green. Spec doc 07 updated.
+- Notes:
+  - 2026-11-23: User report — the original app's Mobile LAN API (`dr_projects/drive/README.md`: "Existing /download/db and /api/info routes remain available") exposes a database download for the companion app; Painless serves neither route (verified against `../drive/src/bun/mobile-sync.ts:120-141`).
+  - 2026-11-23T15:25:00Z: Claimed by [zed-agent (GLM)]. Plan: add `LibraryStats func()` and `DatabaseSnapshot func(ctx)` options to `mobile.Server` (server stays storage-agnostic), wire both from `wiring.Mobile` against its live `storage.DB` (VACUUM INTO a temp file + cleanup), register the routes behind the read guard.
+  - 2026-11-23T15:45:00Z: Done by [zed-agent (GLM)]. New `internal/server/mobile/handlers_info.go`: `GET /`, `/api/info`, `/api/db/stats` return the D-Stream pairing payload (drive name/path from DriveInfo, `download_url` built from the request host, `server_ip` via LANAddress, `stats` from a new `Options.LibraryStats` hook); `GET /download/db`, `/api/db/download` stream the library as `application/x-sqlite3` attachment via `http.ServeContent` (byte ranges + HEAD), snapshotting through a new `Options.DatabaseSnapshot` hook and 404-ing with the D-Stream error shape when the library is missing; HEAD skips the snapshot. Routes sit behind the read-auth guard. `wiring/mobile.go` startLocked wires both hooks to the session's `storage.DB`: `libraryStats` counts media_items/images/videos/albums/tags with missing-table tolerance, `dbSnapshotter` does `VACUUM INTO` a temp file with cleanup; closures capture the per-session db which closes only after server shutdown. Tests: `info_test.go` (payload shape at all three aliases, snapshot round-trip + disposable cleanup + live file untouched, missing-library 404, HEAD without snapshot). Verified: `CGO_ENABLED=0 go test ./...`, `go test -race ./internal/server/... ./internal/wiring/...`, `go vet ./...`, `go tool mygo vet .`, `gofmt -s` all green. Spec doc 07 updated with both endpoints.
+
+---
+
 ## 4. Activity Log
+
+- 2026-11-23T15:25:00Z [zed-agent (GLM)] LOGIC-MOBILE-DB-DOWNLOAD: Claimed (in_progress); adding D-Stream /api/info (stats payload) and /download/db (consistent SQLite snapshot, byte ranges) routes to the mobile sync server, wired through the live library connection.
+- 2026-11-23T15:45:00Z [zed-agent (GLM)] LOGIC-MOBILE-DB-DOWNLOAD: Done. /api/info (+ / and /api/db/stats aliases) serves the D-Stream pairing payload with library stats; /download/db (+ /api/db/download) streams a VACUUM INTO snapshot as an attachment with byte ranges, HEAD skips snapshotting, missing library 404s D-Stream style. Server stays storage-agnostic via new LibraryStats/DatabaseSnapshot option hooks wired from wiring.Mobile. Tests + race + vet + mygo vet + gofmt green; spec doc 07 updated.
 
 - 2026-11-20T23:30:00Z [zed-agent (GLM)] LOGIC-LOGGING-PRODUCERS: Claimed (in_progress); wiring the shell logger into library/drive controllers and wiring controllers (mobile start/stop, backup create/restore/integrity, gdrive test/backup, drive scans) so the Logs console has real entries; also fixing missing Mobile/GDrive Toast hooks.
 - 2026-11-20T23:55:00Z [zed-agent (GLM)] LOGIC-LOGGING-PRODUCERS: Done. Shell logger now threaded through wiring.New into Mobile/Backups/GDrive plus library/drive controllers; producers cover library open/close/read-only, drive scans, mobile sync lifecycle, backups and gdrive; Mobile/GDrive Toast hooks set to store.Notify. wiring.New signature gained the logger param; test added; suite green.

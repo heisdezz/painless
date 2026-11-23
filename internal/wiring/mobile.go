@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -148,6 +151,10 @@ func (m *Mobile) startLocked() error {
 		Albums:    storage.NewAlbumRepo(db),
 		Media:     storage.NewMediaRepo(db),
 		DriveInfo: m.driveInfo,
+		// Closures capture this session's db handle; the server shuts down
+		// before the handle closes, so they never race a Close.
+		LibraryStats:     func() *mobile.LibraryStats { s := libraryStats(db, root); return &s },
+		DatabaseSnapshot: dbSnapshotter(db),
 	})
 	if err := srv.Start(); err != nil {
 		_ = db.Close()
@@ -202,6 +209,52 @@ func (m *Mobile) driveInfo() *domain.DriveInfo {
 		return &drive
 	}
 	return nil
+}
+
+// libraryStats gathers the /api/info library summary with single-row
+// counts; a missing table (older schema) counts as zero.
+func libraryStats(db *storage.DB, root string) mobile.LibraryStats {
+	stats := mobile.LibraryStats{}
+	if db == nil {
+		return stats
+	}
+	count := func(query string) int64 {
+		var n int64
+		_ = db.Raw().QueryRow(query).Scan(&n)
+		return n
+	}
+	stats.TotalItems = count("SELECT count(*) FROM media_items")
+	stats.Images = count("SELECT count(*) FROM media_items WHERE mime_type LIKE 'image/%'")
+	stats.Videos = count("SELECT count(*) FROM media_items WHERE mime_type LIKE 'video/%'")
+	stats.Albums = count("SELECT count(*) FROM albums")
+	stats.Tags = count("SELECT count(*) FROM tags")
+	if info, err := os.Stat(filepath.Join(root, storage.LibraryDBFilename)); err == nil {
+		stats.DBSizeBytes = info.Size()
+		stats.DBExists = true
+	}
+	return stats
+}
+
+// dbSnapshotter returns a /download/db snapshot hook: VACUUM INTO writes
+// a consistent copy to a temp file the server deletes after streaming.
+func dbSnapshotter(db *storage.DB) func(ctx context.Context) (string, func(), error) {
+	return func(ctx context.Context) (string, func(), error) {
+		tmp, err := os.CreateTemp("", "painless-library-*.db")
+		if err != nil {
+			return "", nil, err
+		}
+		path := tmp.Name()
+		if err := tmp.Close(); err != nil {
+			_ = os.Remove(path)
+			return "", nil, err
+		}
+		query := fmt.Sprintf("VACUUM INTO '%s';", strings.ReplaceAll(filepath.ToSlash(path), "'", "''"))
+		if _, err := db.Raw().ExecContext(ctx, query); err != nil {
+			_ = os.Remove(path)
+			return "", nil, err
+		}
+		return path, func() { _ = os.Remove(path) }, nil
+	}
 }
 
 // activeRoot returns the drive root the config belongs to. Callers must

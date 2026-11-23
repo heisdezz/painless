@@ -23,6 +23,11 @@ The mobile sync service provides an authenticated REST and media upload API allo
 
 - `GET /api/status`: Returns server health, active drive name, and capacity.
 - `GET /api/ping`: Connection test.
+- `GET /`, `GET /api/info`, `GET /api/db/stats`: D-Stream pairing payload — server identity (`status: online`, `server`), active drive (`drive_name`, `drive_path`), `download_url` pointing at `/download/db`, `server_ip`, `server_port`, and a `stats` object with `total_items`, `images`, `videos`, `albums`, `tags`, `db_size_bytes`, `db_exists`. Read-auth policy applies.
+
+### Library Download
+
+- `GET /download/db`, `GET /api/db/download`: Serves the library database so the companion app can cache the full catalog offline. The server first snapshots the live WAL database with `VACUUM INTO` into a temp file (deleted once the response completes), streams it as `application/x-sqlite3` with `Content-Disposition: attachment`, and supports HTTP byte ranges. `HEAD` answers from the live file without snapshotting. A missing library returns `404` with `{"error": "Library database not found"}`. Read-auth policy applies.
 
 ### Media & Albums Read/Write
 
@@ -57,6 +62,7 @@ The mobile sync service provides an authenticated REST and media upload API allo
 - `internal/server/mobile/auth.go`: Constant-time token verification.
 - `internal/server/mobile/handlers_crud.go`: Album & media query handlers.
 - `internal/server/mobile/handlers_upload.go`: Streaming multipart file receiver.
+- `internal/server/mobile/handlers_info.go`: `/api/info` pairing payload and `/download/db` snapshot streaming (D-Stream compatibility).
 
 ---
 
@@ -66,3 +72,4 @@ The mobile sync service provides an authenticated REST and media upload API allo
 - [ ] Multipart uploads stream directly to disk without bloating memory.
 - [ ] Unauthorized write requests receive `401 Unauthorized`.
 - [ ] Uploaded files are immediately cataloged in SQLite and scheduled for thumbnailing.
+- [ ] The companion app can fetch server/library info (`/api/info`) and download a consistent database snapshot (`/download/db`) with byte ranges.
