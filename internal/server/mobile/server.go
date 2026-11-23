@@ -47,6 +47,11 @@ type Options struct {
 	// DriveRoot is the active external drive; uploads land on it. It can
 	// be changed at runtime with SetDriveRoot.
 	DriveRoot string
+	// DBFile is the library database location for /download/db. Empty
+	// falls back to <DriveRoot>/.media_library.db. The library may live in
+	// a folder the user chose rather than the drive root, so callers
+	// resolve it via the library package.
+	DBFile string
 	// Albums and Media are the library repositories backing the API.
 	Albums *storage.AlbumRepo
 	Media  *storage.MediaRepo

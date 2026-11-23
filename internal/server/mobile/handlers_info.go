@@ -40,8 +40,16 @@ type infoResponse struct {
 	Stats       *LibraryStats `json:"stats,omitempty"`
 }
 
-// dbPath is the live library database location under the active drive.
+// dbPath is the live library database location. An explicit DBFile wins
+// because the library may live outside the drive root; otherwise the
+// database sits at the drive root.
 func (s *Server) dbPath() string {
+	s.mu.RLock()
+	dbFile := s.opts.DBFile
+	s.mu.RUnlock()
+	if dbFile != "" {
+		return dbFile
+	}
 	root := s.root()
 	if root == "" {
 		return ""

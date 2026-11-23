@@ -662,7 +662,28 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 ---
 
+### Phase 13: Library Location Correctness
+
+#### LOGIC-LIBRARY-LOCATION-RESOLVER: Single Source of Truth for the Library Root
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-23T17:10:00Z
+- Depends on: LOGIC-MOBILE-DB-DOWNLOAD, SYS-LIBRARY-WIRING
+- Allowed paths/scope: `internal/library/**` (new), `internal/ui/shell/**`, `internal/wiring/**`, `internal/server/mobile/**`, `internal/state/events.go`, `docs/implementation/progress.md`
+- Acceptance: every consumer of "the library for this drive" — shell screens, mobile sync, backups, Google Drive backup — reads the same location: the folder persisted in the drive's `.painless/library.json`, falling back to the drive root. Moving the resolver out of the shell package into a shared `internal/library` package eliminates the duplicated drive-root fallbacks. Mobile sync opens its DB (and serves `/download/db`) from the resolved root and restarts itself when the location changes (new `state.EventLibraryLocationChanged`, published by `selectLibraryRoot`). Backups and GDrive operate next to the resolved DB. Tests cover the resolver, the mobile server following the selected location, and `/download/db` honoring `Options.DBFile`. Suite, race, vet, mygo vet, gofmt green.
+- Notes:
+  - 2026-11-23: User report — mobile sync serves/downloads the database from the drive root instead of the selected album folder. Root cause: `loadLibraryRoot` is private to the shell package; `wiring.Mobile.startLocked`, `Backups.activeRoot` and `GDrive.BackupNow` all fall back to the raw drive root. Fix the pattern once (shared resolver + follow-location event) rather than patching the mobile route.
+  - 2026-11-23T16:20:00Z: Claimed by [zed-agent (GLM)]. Plan: extract `internal/library` from `shell/library_location.go`; publish `EventLibraryLocationChanged` on folder change; wiring controllers resolve via `library.ResolveRoot`; mobile server gains `Options.DBFile` for `/download/db`.
+  - 2026-11-23T17:10:00Z: Done by [zed-agent (GLM)]. New `internal/library` package (`.painless/library.json` marker): `LoadRoot`, `ResolveRoot` (persisted root or drive root), `SaveRoot`, `WithinDrive`; shell `library.go` now uses it and publishes the new `state.EventLibraryLocationChanged` after `selectLibraryRoot`. `wiring.Mobile` tracks the resolved root (`dbRoot`): `startLocked` opens/points the server at `library.ResolveRoot`, `reconcileLocked` restarts the server when the resolved root changed (covers the new event plus drive-path changes), `pump` handles the event. `mobile.Server` gained `Options.DBFile` and `/download/db` prefers it over `<root>/.media_library.db`. `wiring.Backups.activeRoot` and `wiring.GDrive.BackupNow` resolve via `library.ResolveRoot` so backups live next to the catalog. Tests: `internal/library/location_test.go`, `internal/wiring/library_location_test.go` (REST + /download/db serve the selected catalog, follow a moved folder without manual restart, backups and gdrive honor the resolver). Verified: `CGO_ENABLED=0 go test ./...`, `go test -race ./internal/wiring/... ./internal/server/... ./internal/library/...`, `go vet ./...`, `go tool mygo vet .`, `gofmt -s -l internal/` all green.
+
+---
+
 ## 4. Activity Log
+
+- 2026-11-23T17:10:00Z [zed-agent (GLM)] LOGIC-LIBRARY-LOCATION-RESOLVER: Done. Extracted shared resolver `internal/library` (`.painless/library.json`); shell publishes `EventLibraryLocationChanged`; wiring.Mobile opens/serves the DB from the resolved root and auto-restarts on location change (server gained `Options.DBFile`); Backups and GDrive resolve the root too. Tests for resolver, mobile REST + /download/db following the selected folder, backups/gdrive; suite + race + vet + mygo vet + gofmt green.
+
+- 2026-11-23T16:20:00Z [zed-agent (GLM)] LOGIC-LIBRARY-LOCATION-RESOLVER: Claimed (in_progress); extracting the library-location resolver into internal/library and re-pointing mobile sync, backups and gdrive at the resolved root so they follow the selected album folder.
 
 - 2026-11-23T15:25:00Z [zed-agent (GLM)] LOGIC-MOBILE-DB-DOWNLOAD: Claimed (in_progress); adding D-Stream /api/info (stats payload) and /download/db (consistent SQLite snapshot, byte ranges) routes to the mobile sync server, wired through the live library connection.
 - 2026-11-23T15:45:00Z [zed-agent (GLM)] LOGIC-MOBILE-DB-DOWNLOAD: Done. /api/info (+ / and /api/db/stats aliases) serves the D-Stream pairing payload with library stats; /download/db (+ /api/db/download) streams a VACUUM INTO snapshot as an attachment with byte ranges, HEAD skips snapshotting, missing library 404s D-Stream style. Server stays storage-agnostic via new LibraryStats/DatabaseSnapshot option hooks wired from wiring.Mobile. Tests + race + vet + mygo vet + gofmt green; spec doc 07 updated.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/library"
 	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/storage"
@@ -36,13 +37,16 @@ type Backups struct {
 // NewBackups builds the backup controller for a store.
 func NewBackups(store *state.Store) *Backups { return &Backups{store: store} }
 
-// activeRoot returns the active drive root, or an error when none.
+// activeRoot returns the effective library root for the active drive —
+// the folder holding the SQLite catalog, which may be a user-chosen album
+// folder rather than the drive root — or an error when no drive is active.
+// Snapshots live next to the catalog, so every operation keys off this.
 func (b *Backups) activeRoot() (string, error) {
 	drive, ok := b.store.State.ActiveDrive()
 	if !ok || drive.Path == "" {
 		return "", errors.New("no active drive")
 	}
-	return drive.Path, nil
+	return library.ResolveRoot(drive.Path), nil
 }
 
 // DBPath is the library database location for the health card.

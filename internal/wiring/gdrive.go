@@ -12,6 +12,7 @@ import (
 
 	"painless/internal/domain"
 	"painless/internal/gdrive"
+	"painless/internal/library"
 	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/storage"
@@ -204,7 +205,7 @@ func (g *GDrive) BackupNow() (string, error) {
 		return "", err
 	}
 	var res *gdrive.BackupResult
-	err = withLibrary(drive.Path, func(db *storage.DB) error {
+	err = withLibrary(library.ResolveRoot(drive.Path), func(db *storage.DB) error {
 		ctx, cancel := context.WithTimeout(context.Background(), gdriveBackupTimeout)
 		defer cancel()
 		var err error

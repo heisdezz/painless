@@ -19,11 +19,15 @@ const (
 	// EventLibraryRestored is published after a backup snapshot replaces the
 	// active drive's database file; live connections must be reopened.
 	EventLibraryRestored EventKind = "library_restored"
-	EventStagingChanged  EventKind = "staging_changed"
-	EventJobStarted      EventKind = "job_started"
-	EventJobProgress     EventKind = "job_progress"
-	EventJobFinished     EventKind = "job_finished"
-	EventToast           EventKind = "toast"
+	// EventLibraryLocationChanged is published after the user picks a
+	// different library folder for the active drive; background services
+	// (mobile sync, backups) must resolve the location again.
+	EventLibraryLocationChanged EventKind = "library_location_changed"
+	EventStagingChanged         EventKind = "staging_changed"
+	EventJobStarted             EventKind = "job_started"
+	EventJobProgress            EventKind = "job_progress"
+	EventJobFinished            EventKind = "job_finished"
+	EventToast                  EventKind = "toast"
 )
 
 // Toast is a transient notification payload for feedback.Toast.

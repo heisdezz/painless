@@ -7,6 +7,7 @@ import (
 
 	"painless/internal/domain"
 	"painless/internal/fileops"
+	"painless/internal/library"
 	"painless/internal/scanner"
 	"painless/internal/state"
 	"painless/internal/storage"
@@ -129,7 +130,7 @@ func (l *libraryController) sync() {
 	drive, ok := l.store.State.ActiveDrive()
 	libraryRoot, albumFolder := "", ""
 	if ok {
-		libraryRoot = loadLibraryRoot(drive.Path)
+		libraryRoot = library.LoadRoot(drive.Path)
 		if libraryRoot == "" {
 			// Existing libraries keep their database at the drive root; the
 			// album folder only becomes the library root once chosen.
@@ -207,11 +208,11 @@ func (l *libraryController) sync() {
 // selectLibraryRoot persists the folder chosen in Discover and reopens every
 // screen against its catalog. Media paths stay relative to the drive mount.
 func (l *libraryController) selectLibraryRoot(driveRoot, path string) {
-	if !isWithinDrive(driveRoot, path) {
+	if !library.WithinDrive(driveRoot, path) {
 		l.shell.toaster.Error("Invalid library folder", "Choose a folder inside the active drive.")
 		return
 	}
-	if err := saveLibraryRoot(driveRoot, path); err != nil {
+	if err := library.SaveRoot(driveRoot, path); err != nil {
 		l.logf(domain.LogLevelError, "save library folder failed: %v", err)
 		l.shell.toaster.Error("Could not save library folder", err.Error())
 		return
@@ -219,6 +220,9 @@ func (l *libraryController) selectLibraryRoot(driveRoot, path string) {
 	l.logf(domain.LogLevelInfo, "library folder changed to %s", path)
 	l.drive = "" // force sync to reopen at the new location
 	l.sync()
+	// Background services (mobile sync, backups) resolve the location
+	// themselves; tell them the folder moved so they follow immediately.
+	l.store.Bus.Publish(state.Event{Kind: state.EventLibraryLocationChanged})
 }
 
 // Close detaches the old screens immediately, then releases the database

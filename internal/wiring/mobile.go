@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/library"
 	"painless/internal/logging"
 	"painless/internal/server/mobile"
 	"painless/internal/state"
@@ -44,6 +45,7 @@ type Mobile struct {
 	enabled bool // session-level desired state; not persisted
 	cfg     driveSettings
 	cfgRoot string // drive root the config was loaded from; "" = none yet
+	dbRoot  string // resolved library root the running server was opened at
 	srv     *mobile.Server
 	db      *storage.DB
 	cancel  func() // stops the drive-event pump
@@ -71,7 +73,7 @@ func (m *Mobile) pump(events <-chan state.Event, done <-chan struct{}) {
 				return
 			}
 			switch ev.Kind {
-			case state.EventDrivesChanged, state.EventActiveDriveChange:
+			case state.EventDrivesChanged, state.EventActiveDriveChange, state.EventLibraryLocationChanged:
 				m.followDrive()
 			}
 		}
@@ -100,8 +102,9 @@ func (m *Mobile) refreshLocked() {
 	m.cfgRoot = root
 }
 
-// reconcileLocked aligns the server with the enabled flag and the drive
-// the config belongs to. Callers must hold m.mu.
+// reconcileLocked aligns the server with the enabled flag, the drive the
+// config belongs to, and the resolved library location. Callers must hold
+// m.mu.
 func (m *Mobile) reconcileLocked() {
 	switch {
 	case m.srv != nil && (m.cfgRoot == "" || !m.enabled):
@@ -120,11 +123,25 @@ func (m *Mobile) reconcileLocked() {
 				m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
 			}
 		}
+	case m.srv != nil && library.ResolveRoot(m.cfgRoot) != m.dbRoot:
+		// The library folder for this drive changed; restart so the server
+		// serves the catalog at its new location.
+		logf(m.logs, "mobile sync", domain.LogLevelInfo, "library folder moved, restarting sync server")
+		if err := m.restartLocked(); err != nil {
+			logf(m.logs, "mobile sync", domain.LogLevelError, "restart failed: %v", err)
+			if m.Toast != nil {
+				m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+			}
+		}
 	}
 }
 
 // startLocked opens the library and begins serving sync from the drive the
-// config belongs to. Callers must hold m.mu.
+// config belongs to. The catalog lives at the drive's resolved library
+// location, which may be a folder the user chose in Discover rather than
+// the drive root; media paths stay relative to the drive root, so the
+// server keeps the drive as its file root.
+// Callers must hold m.mu.
 func (m *Mobile) startLocked() error {
 	root := m.cfgRoot
 	if root == "" {
@@ -133,7 +150,8 @@ func (m *Mobile) startLocked() error {
 	if m.srv != nil {
 		return nil
 	}
-	db, err := storage.Open(root, storage.OpenOptions{})
+	libRoot := library.ResolveRoot(root)
+	db, err := storage.Open(libRoot, storage.OpenOptions{})
 	if err != nil {
 		return fmt.Errorf("open library: %w", err)
 	}
@@ -148,12 +166,13 @@ func (m *Mobile) startLocked() error {
 		Port:      m.portLocked(),
 		Token:     token,
 		DriveRoot: root,
+		DBFile:    filepath.Join(libRoot, storage.LibraryDBFilename),
 		Albums:    storage.NewAlbumRepo(db),
 		Media:     storage.NewMediaRepo(db),
 		DriveInfo: m.driveInfo,
 		// Closures capture this session's db handle; the server shuts down
 		// before the handle closes, so they never race a Close.
-		LibraryStats:     func() *mobile.LibraryStats { s := libraryStats(db, root); return &s },
+		LibraryStats:     func() *mobile.LibraryStats { s := libraryStats(db, libRoot); return &s },
 		DatabaseSnapshot: dbSnapshotter(db),
 	})
 	if err := srv.Start(); err != nil {
@@ -161,6 +180,7 @@ func (m *Mobile) startLocked() error {
 		return err
 	}
 	m.srv, m.db = srv, db
+	m.dbRoot = libRoot
 	logf(m.logs, "mobile sync", domain.LogLevelInfo,
 		"sync server listening on port %d for drive %s", m.portLocked(), root)
 	return nil
@@ -174,7 +194,7 @@ func (m *Mobile) stopLocked() error {
 	}
 	port := m.portLocked()
 	srv, db := m.srv, m.db
-	m.srv, m.db = nil, nil
+	m.srv, m.db, m.dbRoot = nil, nil, ""
 	ctx, cancel := context.WithTimeout(context.Background(), mobileShutdownGrace)
 	defer cancel()
 	err := srv.Shutdown(ctx)
