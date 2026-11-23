@@ -679,7 +679,24 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 ---
 
+### Phase 14: D-Stream Playback Route Compat
+
+#### LOGIC-MOBILE-BARE-ROUTES: Bare /media/{id} and /thumbnail/{id} Playback Routes
+
+- Status: done
+- Owner: zed-agent (GLM)
+- Updated: 2026-11-23T18:40:00Z
+- Depends on: LOGIC-MOBILE-DSTREAM-COMPAT
+- Allowed paths/scope: `internal/server/mobile/**`, `internal/server/stream/**`, `docs/implementation/progress.md`
+- Acceptance: the D-Stream app streams media at `GET /media/{itemId}` and thumbnails at `GET /thumbnail/{itemId}` (see `d-stream/src/services/sync-api.ts`); the original desktop server accepts both with and without the `/api/` prefix (`mobile-sync.ts` regex `/^\/(?:api\/)?(media|thumbnail)\/(\d+)$/`). Painless must serve the bare routes identically to the `/api/...` ones (byte ranges, read-auth guard). Tests cover both bare routes; suite, race, vet, mygo vet, gofmt green.
+- Notes:
+  - 2026-11-23: User report — media never loads in the D-Stream app against Painless. Root cause found by auditing the app source: it builds `/media/{id}` / `/thumbnail/{id}` URLs without the `/api/` prefix; Painless only registered the prefixed variants, so every playback request 404s.
+
 ## 4. Activity Log
+
+- 2026-11-23T18:40:00Z [zed-agent (GLM)] LOGIC-MOBILE-BARE-ROUTES: Done. Added bare /media/{id} and /thumbnail/{id} playback routes in stream.Routes.Handler() and mobile.Server mux (both guarded identically to prefixed variants). New test TestBareMediaAndThumbnailRoutes covers full-body, byte ranges, and thumbnails. Suite + race + vet + mygo vet + gofmt green.
+
+- 2026-11-23T18:25:00Z [zed-agent (GLM)] LOGIC-MOBILE-BARE-ROUTES: Claimed (in_progress); adding the unprefixed /media/{id} and /thumbnail/{id} playback routes the D-Stream app actually calls (verified against d-stream/src/services/sync-api.ts and the original mobile-sync.ts regex).
 
 - 2026-11-23T17:10:00Z [zed-agent (GLM)] LOGIC-LIBRARY-LOCATION-RESOLVER: Done. Extracted shared resolver `internal/library` (`.painless/library.json`); shell publishes `EventLibraryLocationChanged`; wiring.Mobile opens/serves the DB from the resolved root and auto-restarts on location change (server gained `Options.DBFile`); Backups and GDrive resolve the root too. Tests for resolver, mobile REST + /download/db following the selected folder, backups/gdrive; suite + race + vet + mygo vet + gofmt green.
 

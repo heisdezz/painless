@@ -164,12 +164,15 @@ func (s *Server) Handler() http.Handler {
 	}
 	mediaHandler := playback.Handler()
 	// Playback routes live in the stream package: path-based /stream,
-	// query-based /thumbnail, and the ID-addressed /api/media/{id} file
-	// stream and /api/thumbnail/{id}.
+	// query-based /thumbnail, and the ID-addressed /api/media/{id} and
+	// /api/thumbnail/{id} plus the bare /media/{id} and /thumbnail/{id}
+	// forms the D-Stream companion app calls.
 	mux.Handle("GET /stream", guard(mediaHandler.ServeHTTP))
 	mux.Handle("GET /thumbnail", guard(mediaHandler.ServeHTTP))
 	mux.Handle("GET /api/media/{id}", guard(mediaHandler.ServeHTTP))
 	mux.Handle("GET /api/thumbnail/{id}", guard(mediaHandler.ServeHTTP))
+	mux.Handle("GET /media/{id}", guard(mediaHandler.ServeHTTP))
+	mux.Handle("GET /thumbnail/{id}", guard(mediaHandler.ServeHTTP))
 
 	return s.cors(mux)
 }

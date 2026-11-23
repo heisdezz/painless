@@ -30,12 +30,16 @@ type Routes struct {
 // Handler builds the playback router; exposed for tests and embedding.
 // Besides the query-parameter playback routes, it also serves the
 // D-Stream-compatible ID-addressed routes GET /api/media/{id} (original
-// file with byte ranges) and GET /api/thumbnail/{id}.
+// file with byte ranges) and GET /api/thumbnail/{id}, plus their bare
+// /media/{id} and /thumbnail/{id} forms — the original desktop server
+// accepts both prefixes and the D-Stream app calls the bare ones.
 func (s Routes) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /stream", s.handleStream)
 	mux.HandleFunc("GET /thumbnail", s.handleThumbnail)
 	mux.HandleFunc("GET /api/media/{id}", s.handleMediaByID)
 	mux.HandleFunc("GET /api/thumbnail/{id}", s.handleThumbnailByID)
+	mux.HandleFunc("GET /media/{id}", s.handleMediaByID)
+	mux.HandleFunc("GET /thumbnail/{id}", s.handleThumbnailByID)
 	return mux
 }
