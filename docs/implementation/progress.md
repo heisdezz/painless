@@ -634,21 +634,23 @@ Follow the pinned rules in `mygo-maintenance` and `docs/skills/lobe.md`:
 
 #### LOGIC-LOGGING-PRODUCERS: Wire Log Producers Into App Operations
 
-- Status: in_progress
+- Status: done
 - Owner: zed-agent (GLM)
-- Updated: 2026-11-20T23:30:00Z
+- Updated: 2026-11-20T23:55:00Z
 - Depends on: UI-SETTINGS-LOGS, SYS-SETTINGS-CONTROLLERS
 - Allowed paths/scope: `internal/ui/shell/**`, `internal/wiring/**`, `docs/implementation/progress.md`
 - Acceptance: the Settings → Logs console shows live entries from real operations instead of staying empty. The shell's ring-buffer logger is handed to the wiring controllers and the library/drive controllers; library open/close and read-only fallback, drive scans and attach/detach, mobile sync start/stop/restart/token regeneration, backup create/restore/integrity and Google Drive test/backup all append entries with stable contexts (`library`, `drives`, `mobile sync`, `backup`, `gdrive`). Wiring also sets the controllers' Toast hooks so background start/stop failures surface to the user. Suite, race, vet, mygo vet, gofmt green.
 - Notes:
   - 2026-11-20: User report — the Logs tab renders only "No matching entries". Diagnosis: `logging.Logger` is created in `shell.New` and passed solely to the settings screen; no code path calls Info/Warn/Error, so the ring buffer is always empty. Additionally `wiring` never sets `Mobile.Toast`/`GDrive.Toast`, so background reconcile failures vanish.
   - 2026-11-20T23:30:00Z: Claimed by [zed-agent (GLM)]. Plan: add nil-safe `logs` fields to the wiring controllers (constructor signatures unchanged to avoid churning tests), thread the shell logger through `wiring.New`, and add producer call sites in `library.go`, `drives.go`, `mobile.go`, `backups.go`, `gdrive.go`.
+  - 2026-11-20T23:55:00Z: Done by [zed-agent (GLM)]. `wiring.New(store, logs)` now threads the shell logger into all three controllers and sets `Mobile.Toast`/`GDrive.Toast = store.Notify` (background reconcile failures were previously silent). Producers: mobile sync start/stop/restart/token-regen (`internal/wiring/mobile.go`), backup create/restore/integrity (`backups.go`), gdrive client creation/connection test/backup (`gdrive.go`), library open/close/read-only/scaffold/folder change (`internal/ui/shell/library.go` via new `logf` helper), drive startup/manual/monitor scans (`internal/ui/shell/drives.go`, `newDriveController` gained a logger param). Nil-safe everywhere so tests construct controllers without a logger. Test: `TestBackupsLogsOperations` asserts 'backup'-context entries reach the ring buffer. Verified: `CGO_ENABLED=0 go test ./internal/wiring/... ./internal/ui/shell/...`, `go build ./...`, gofmt green.
 
 ---
 
 ## 4. Activity Log
 
 - 2026-11-20T23:30:00Z [zed-agent (GLM)] LOGIC-LOGGING-PRODUCERS: Claimed (in_progress); wiring the shell logger into library/drive controllers and wiring controllers (mobile start/stop, backup create/restore/integrity, gdrive test/backup, drive scans) so the Logs console has real entries; also fixing missing Mobile/GDrive Toast hooks.
+- 2026-11-20T23:55:00Z [zed-agent (GLM)] LOGIC-LOGGING-PRODUCERS: Done. Shell logger now threaded through wiring.New into Mobile/Backups/GDrive plus library/drive controllers; producers cover library open/close/read-only, drive scans, mobile sync lifecycle, backups and gdrive; Mobile/GDrive Toast hooks set to store.Notify. wiring.New signature gained the logger param; test added; suite green.
 
 - 2026-11-17T18:00:00Z [system] Progress tracker established. Multi-agent collision avoidance rules, implementation standards, and task registry initialized.
 - 2026-11-17T18:08:00Z [system] Added github.com/lobehub/lobe-mygo dependency and updated UI specifications to use Lobe GPU-accelerated components.

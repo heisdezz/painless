@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/storage"
 )
@@ -36,6 +37,32 @@ func seedLibrary(t *testing.T, root string) *storage.DB {
 		t.Fatalf("insert marker: %v", err)
 	}
 	return db
+}
+
+// TestBackupsLogsOperations proves the backup controller feeds the logs
+// console: a successful snapshot and an integrity check must both append
+// entries under the "backup" context.
+func TestBackupsLogsOperations(t *testing.T) {
+	root := t.TempDir()
+	seedLibrary(t, root).Close()
+	logs := logging.New(logging.Options{})
+	b := NewBackups(newDriveStore(t, root))
+	b.logs = logs
+
+	if _, err := b.CreateBackup(); err != nil {
+		t.Fatalf("CreateBackup: %v", err)
+	}
+	if _, ok := b.IntegrityCheck(); !ok {
+		t.Fatal("IntegrityCheck not ok")
+	}
+	entries := logs.Query(logging.Filter{Level: domain.LogLevelInfo})
+	contexts := map[string]bool{}
+	for _, e := range entries {
+		contexts[e.Context] = true
+	}
+	if !contexts["backup"] {
+		t.Fatalf("no 'backup' entries logged, got %v", contexts)
+	}
 }
 
 func TestBackupsCreateListIntegrity(t *testing.T) {
