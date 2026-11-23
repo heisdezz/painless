@@ -11,6 +11,7 @@ import (
 // service layer. Build once with New at app startup; Close on shutdown.
 type Controllers struct {
 	store *state.Store
+	logs  *logging.Logger
 
 	Backups *Backups
 	Mobile  *Mobile
@@ -19,14 +20,24 @@ type Controllers struct {
 
 // New builds the controllers for a store. The controllers resolve the
 // active drive themselves, so they keep working across drive switches
-// without re-wiring.
-func New(store *state.Store) *Controllers {
-	return &Controllers{
+// without re-wiring. A nil logger leaves the producers silent; tests
+// construct controllers directly without one.
+func New(store *state.Store, logs *logging.Logger) *Controllers {
+	c := &Controllers{
 		store:   store,
+		logs:    logs,
 		Backups: NewBackups(store),
 		Mobile:  NewMobile(store),
 		GDrive:  NewGDrive(store),
 	}
+	c.Backups.logs = logs
+	c.Mobile.logs = logs
+	c.GDrive.logs = logs
+	// Surface background start/stop failures that no settings tab is open
+	// to see; without these the reconciler fails silently.
+	c.Mobile.Toast = store.Notify
+	c.GDrive.Toast = store.Notify
+	return c
 }
 
 // Close releases background resources: the mobile sync server and the

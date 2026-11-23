@@ -20,7 +20,7 @@ func TestShellShowsWiredSettingsValues(t *testing.T) {
 		Status: domain.DriveStatusMounted, HasLibrary: true,
 	}})
 	shell := New(store)
-	controllers := wiring.New(store)
+	controllers := wiring.New(store, shell.Logger())
 	defer controllers.Close()
 	shell.SetSettings(controllers.SettingsScreen(shell.Logger(), store.Notify))
 	store.Navigate(state.ScreenSettings)

@@ -94,13 +94,13 @@ func (s *Shell) SetWindow(w windowHost) {
 func Open() *mygo.Window {
 	store := state.NewStore()
 	shell := New(store)
-	controllers := wiring.New(store)
+	controllers := wiring.New(store, shell.Logger())
 	shell.SetSettings(controllers.SettingsScreen(shell.Logger(), store.Notify))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	drives := drive.NewService()
 	monitor := drive.NewMonitor(drives, drive.DefaultPollInterval)
-	controller := newDriveController(store, drives, shell.toaster, monitor.Events())
+	controller := newDriveController(store, drives, shell.toaster, shell.logger, monitor.Events())
 	shell.attachDrives(controller)
 
 	library := newLibraryController(store, shell)

@@ -92,6 +92,14 @@ func newLibraryController(store *state.Store, shell *Shell) *libraryController {
 	return &libraryController{store: store, shell: shell}
 }
 
+// logf appends one entry to the shell's logs console when a logger exists
+// (tests may build the shell without one). Safe from any goroutine.
+func (l *libraryController) logf(level domain.LogLevel, format string, args ...any) {
+	if l.shell != nil && l.shell.logger != nil {
+		l.shell.logger.Log(level, "library", format, args...)
+	}
+}
+
 // HandleEvent reopens the library when the active drive changes.
 func (l *libraryController) HandleEvent(event state.Event) {
 	switch event.Kind {
@@ -136,22 +144,32 @@ func (l *libraryController) sync() {
 	}
 	l.Close()
 	if !ok {
+		if l.drive != "" || l.root != "" {
+			l.logf(domain.LogLevelInfo, "library detached: no active drive")
+		}
 		return
 	}
 
 	db, err := storage.Open(libraryRoot, storage.OpenOptions{})
 	if err != nil {
+		l.logf(domain.LogLevelError, "open library at %s failed: %v", libraryRoot, err)
 		l.shell.toaster.Error("Could not open library", err.Error())
 		return
 	}
 	thumbs := thumbnail.New(thumbnail.Options{DriveRoot: drive.Path, Store: l.store})
 	mediaRepo, albumRepo := storage.NewMediaRepo(db), storage.NewAlbumRepo(db)
 	l.db, l.thumbs, l.drive, l.root = db, thumbs, drive.ID, libraryRoot
+	if db.IsReadOnly() {
+		l.logf(domain.LogLevelWarn, "opened library at %s read-only (another instance may hold it)", libraryRoot)
+	} else {
+		l.logf(domain.LogLevelInfo, "opened library at %s", libraryRoot)
+	}
 
 	// Create the managed folders up front so the Discover scaffold banner only
 	// reports genuinely absent folders instead of ones consolidation creates later.
 	if !db.IsReadOnly() {
 		if err := fileops.ScaffoldLibrary(drive.Path); err != nil {
+			l.logf(domain.LogLevelError, "scaffold library folders failed: %v", err)
 			l.shell.toaster.Error("Could not prepare library folders", err.Error())
 		}
 	}
@@ -194,9 +212,11 @@ func (l *libraryController) selectLibraryRoot(driveRoot, path string) {
 		return
 	}
 	if err := saveLibraryRoot(driveRoot, path); err != nil {
+		l.logf(domain.LogLevelError, "save library folder failed: %v", err)
 		l.shell.toaster.Error("Could not save library folder", err.Error())
 		return
 	}
+	l.logf(domain.LogLevelInfo, "library folder changed to %s", path)
 	l.drive = "" // force sync to reopen at the new location
 	l.sync()
 }
@@ -214,10 +234,12 @@ func (l *libraryController) Close() {
 		l.thumbs.Close()
 	}
 	if db := l.db; db != nil {
+		root := l.root
 		go func() {
 			<-done
 			_ = db.Close()
 		}()
+		l.logf(domain.LogLevelInfo, "closed library at %s", root)
 	}
 	l.db, l.thumbs, l.drive, l.root = nil, nil, "", ""
 }

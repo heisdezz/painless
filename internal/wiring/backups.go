@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"painless/internal/domain"
+	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/storage"
 	"painless/internal/ui/screens/settings"
@@ -26,6 +28,9 @@ var _ settings.BackupsController = (*Backups)(nil)
 // extra short-lived WAL connections are cheap.
 type Backups struct {
 	store *state.Store
+
+	// logs, when set, receives backup lifecycle entries for the logs console.
+	logs *logging.Logger
 }
 
 // NewBackups builds the backup controller for a store.
@@ -75,6 +80,7 @@ func withLibrary(root string, fn func(db *storage.DB) error) error {
 func (b *Backups) CreateBackup() (string, error) {
 	root, err := b.activeRoot()
 	if err != nil {
+		logf(b.logs, "backup", domain.LogLevelWarn, "create failed: %v", err)
 		return "", err
 	}
 	var path string
@@ -86,8 +92,10 @@ func (b *Backups) CreateBackup() (string, error) {
 		return err
 	})
 	if err != nil {
+		logf(b.logs, "backup", domain.LogLevelError, "create failed: %v", err)
 		return "", err
 	}
+	logf(b.logs, "backup", domain.LogLevelInfo, "created snapshot %s", path)
 	return path, nil
 }
 
@@ -121,15 +129,20 @@ func (b *Backups) ListBackups() ([]settings.BackupInfo, error) {
 func (b *Backups) RestoreBackup(path string) error {
 	root, err := b.activeRoot()
 	if err != nil {
+		logf(b.logs, "backup", domain.LogLevelWarn, "restore failed: %v", err)
 		return err
 	}
 	dest := filepath.Join(root, storage.LibraryDBFilename)
 	if path == dest {
-		return errors.New("cannot restore the database onto itself")
+		err := errors.New("cannot restore the database onto itself")
+		logf(b.logs, "backup", domain.LogLevelWarn, "restore failed: %v", err)
+		return err
 	}
 	src, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open backup: %w", err)
+		err = fmt.Errorf("open backup: %w", err)
+		logf(b.logs, "backup", domain.LogLevelError, "restore failed: %v", err)
+		return err
 	}
 	defer src.Close()
 	tmp, err := os.CreateTemp(root, ".restore-*"+storage.LibraryDBFilename)
@@ -140,7 +153,9 @@ func (b *Backups) RestoreBackup(path string) error {
 	if _, err := io.Copy(tmp, src); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("copy backup: %w", err)
+		err = fmt.Errorf("copy backup: %w", err)
+		logf(b.logs, "backup", domain.LogLevelError, "restore failed: %v", err)
+		return err
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)
@@ -153,6 +168,7 @@ func (b *Backups) RestoreBackup(path string) error {
 	// The live library connection now points at the replaced file's old
 	// inode; tell the shell to reopen it. Event delivery is async and the
 	// restored pages are already durable at this point.
+	logf(b.logs, "backup", domain.LogLevelInfo, "restored library from %s", path)
 	b.store.Bus.Publish(state.Event{Kind: state.EventLibraryRestored})
 	return nil
 }
@@ -168,7 +184,9 @@ func (b *Backups) IntegrityCheck() (string, bool) {
 		return db.Raw().QueryRow("PRAGMA integrity_check").Scan(&report)
 	})
 	if err != nil {
+		logf(b.logs, "backup", domain.LogLevelError, "integrity check failed: %v", err)
 		return err.Error(), false
 	}
+	logf(b.logs, "backup", domain.LogLevelInfo, "integrity check: %s", report)
 	return report, report == "ok"
 }

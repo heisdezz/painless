@@ -7,6 +7,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
 
 	"painless/internal/domain"
+	"painless/internal/logging"
 	"painless/internal/state"
 )
 
@@ -23,18 +24,28 @@ type driveController struct {
 	store   *state.Store
 	lister  driveLister
 	toaster *Toaster
+	logs    *logging.Logger
 	events  <-chan domain.DriveEvent
 	ctx     context.Context
 }
 
-func newDriveController(store *state.Store, lister driveLister, toaster *Toaster, events <-chan domain.DriveEvent) *driveController {
-	return &driveController{store: store, lister: lister, toaster: toaster, events: events}
+func newDriveController(store *state.Store, lister driveLister, toaster *Toaster, logs *logging.Logger, events <-chan domain.DriveEvent) *driveController {
+	return &driveController{store: store, lister: lister, toaster: toaster, logs: logs, events: events}
+}
+
+// logf appends one entry to the logs console when a logger is wired; tests
+// build the controller without one. Safe from any goroutine.
+func (c *driveController) logf(level domain.LogLevel, format string, args ...any) {
+	if c.logs != nil {
+		c.logs.Log(level, "drives", format, args...)
+	}
 }
 
 // scan replaces the store's drive list. Safe from any goroutine.
 func (c *driveController) scan(ctx context.Context) (int, error) {
 	drives, err := c.lister.ListDrives(ctx)
 	if err != nil {
+		c.logf(domain.LogLevelError, "scan failed: %v", err)
 		return 0, err
 	}
 	c.store.ApplyDrives(drives)
@@ -60,6 +71,7 @@ func (c *driveController) Refresh(ctx context.Context) {
 			})
 			return
 		}
+		c.logf(domain.LogLevelInfo, "manual scan found %d drive(s)", count)
 		c.toaster.Publish(ToastMessage{
 			Title:       "Drive scan complete",
 			Description: fmt.Sprintf("%d drive(s) available", count),
@@ -72,10 +84,12 @@ func (c *driveController) Refresh(ctx context.Context) {
 // monitor events for insertions and removals until ctx is cancelled.
 func (c *driveController) Start(ctx context.Context) {
 	c.ctx = ctx
-	if _, err := c.scan(ctx); err != nil {
+	if count, err := c.scan(ctx); err != nil {
 		c.toaster.Publish(ToastMessage{
 			Title: "Drive scan failed", Description: err.Error(), Type: feedback.ToastError,
 		})
+	} else {
+		c.logf(domain.LogLevelInfo, "startup scan found %d drive(s)", count)
 	}
 	if c.events == nil {
 		return
@@ -89,10 +103,12 @@ func (c *driveController) Start(ctx context.Context) {
 				if !ok {
 					return
 				}
-				if _, err := c.scan(ctx); err != nil {
+				if count, err := c.scan(ctx); err != nil {
 					c.toaster.Publish(ToastMessage{
 						Title: "Drive scan failed", Description: err.Error(), Type: feedback.ToastError,
 					})
+				} else {
+					c.logf(domain.LogLevelInfo, "drive change detected, rescanned: %d drive(s)", count)
 				}
 			}
 		}

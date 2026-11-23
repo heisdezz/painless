@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"painless/internal/domain"
+	"painless/internal/logging"
 	"painless/internal/server/mobile"
 	"painless/internal/state"
 	"painless/internal/storage"
@@ -32,6 +33,9 @@ type Mobile struct {
 	// Toast, when set, surfaces background start/stop failures that no
 	// settings tab is open to see.
 	Toast func(level domain.LogLevel, title, body string)
+
+	// logs, when set, receives sync lifecycle entries for the logs console.
+	logs *logging.Logger
 
 	mu      sync.Mutex
 	enabled bool // session-level desired state; not persisted
@@ -98,12 +102,20 @@ func (m *Mobile) refreshLocked() {
 func (m *Mobile) reconcileLocked() {
 	switch {
 	case m.srv != nil && (m.cfgRoot == "" || !m.enabled):
-		if err := m.stopLocked(); err != nil && m.Toast != nil {
-			m.Toast(domain.LogLevelWarn, "Mobile sync", err.Error())
+		logf(m.logs, "mobile sync", domain.LogLevelInfo, "stopping: %s",
+			map[bool]string{true: "active drive detached", false: "sync disabled"}[m.cfgRoot == ""])
+		if err := m.stopLocked(); err != nil {
+			logf(m.logs, "mobile sync", domain.LogLevelWarn, "stop failed: %v", err)
+			if m.Toast != nil {
+				m.Toast(domain.LogLevelWarn, "Mobile sync", err.Error())
+			}
 		}
 	case m.srv == nil && m.cfgRoot != "" && m.enabled:
-		if err := m.startLocked(); err != nil && m.Toast != nil {
-			m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+		if err := m.startLocked(); err != nil {
+			logf(m.logs, "mobile sync", domain.LogLevelError, "start failed: %v", err)
+			if m.Toast != nil {
+				m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+			}
 		}
 	}
 }
@@ -142,6 +154,8 @@ func (m *Mobile) startLocked() error {
 		return err
 	}
 	m.srv, m.db = srv, db
+	logf(m.logs, "mobile sync", domain.LogLevelInfo,
+		"sync server listening on port %d for drive %s", m.portLocked(), root)
 	return nil
 }
 
@@ -151,6 +165,7 @@ func (m *Mobile) stopLocked() error {
 	if m.srv == nil {
 		return nil
 	}
+	port := m.portLocked()
 	srv, db := m.srv, m.db
 	m.srv, m.db = nil, nil
 	ctx, cancel := context.WithTimeout(context.Background(), mobileShutdownGrace)
@@ -159,7 +174,14 @@ func (m *Mobile) stopLocked() error {
 	if cerr := db.Close(); err == nil {
 		err = cerr
 	}
-	return err
+	if err != nil {
+		logf(m.logs, "mobile sync", domain.LogLevelWarn,
+			"sync server on port %d stopped with error: %v", port, err)
+		return err
+	}
+	logf(m.logs, "mobile sync", domain.LogLevelInfo,
+		"sync server on port %d stopped", port)
+	return nil
 }
 
 // restartLocked applies config changes to a running server. Callers must
@@ -240,8 +262,12 @@ func (m *Mobile) SetPort(port int) {
 	if m.cfgRoot != "" {
 		_ = m.cfg.save(m.cfgRoot)
 	}
-	if err := m.restartLocked(); err != nil && m.Toast != nil {
-		m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+	logf(m.logs, "mobile sync", domain.LogLevelInfo, "port changed to %d", port)
+	if err := m.restartLocked(); err != nil {
+		logf(m.logs, "mobile sync", domain.LogLevelError, "restart failed: %v", err)
+		if m.Toast != nil {
+			m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+		}
 	}
 }
 
@@ -288,8 +314,12 @@ func (m *Mobile) RegenerateToken() string {
 	if m.cfgRoot != "" {
 		_ = m.cfg.save(m.cfgRoot)
 	}
-	if err := m.restartLocked(); err != nil && m.Toast != nil {
-		m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+	logf(m.logs, "mobile sync", domain.LogLevelInfo, "pairing token regenerated")
+	if err := m.restartLocked(); err != nil {
+		logf(m.logs, "mobile sync", domain.LogLevelError, "restart failed: %v", err)
+		if m.Toast != nil {
+			m.Toast(domain.LogLevelError, "Mobile sync", err.Error())
+		}
 	}
 	return m.cfg.MobileToken
 }

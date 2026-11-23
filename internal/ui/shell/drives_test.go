@@ -72,7 +72,7 @@ func TestDriveControllerSeedsStoreAndShell(t *testing.T) {
 	store := state.NewStore()
 	shell := New(store)
 	lister := &fakeDriveLister{drives: []domain.DriveInfo{testDrive("Samsung T7")}}
-	controller := newDriveController(store, lister, shell.toaster, nil)
+	controller := newDriveController(store, lister, shell.toaster, shell.logger, nil)
 	shell.attachDrives(controller)
 	controller.Start(context.Background())
 
@@ -92,7 +92,7 @@ func TestDriveControllerAppliesMonitorEvents(t *testing.T) {
 	events := make(chan domain.DriveEvent, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	controller := newDriveController(store, lister, shell.toaster, events)
+	controller := newDriveController(store, lister, shell.toaster, shell.logger, events)
 	shell.attachDrives(controller)
 	controller.Start(ctx)
 
@@ -116,7 +116,7 @@ func TestRefreshButtonScansDrives(t *testing.T) {
 	lister := &fakeDriveLister{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	controller := newDriveController(store, lister, shell.toaster, nil)
+	controller := newDriveController(store, lister, shell.toaster, shell.logger, nil)
 	shell.attachDrives(controller)
 	controller.Start(ctx)
 
@@ -141,7 +141,7 @@ func TestRefreshReportsFailure(t *testing.T) {
 	lister := &fakeDriveLister{err: errors.New("disk offline")}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	controller := newDriveController(store, lister, shell.toaster, nil)
+	controller := newDriveController(store, lister, shell.toaster, shell.logger, nil)
 	shell.attachDrives(controller)
 	controller.Start(ctx)
 

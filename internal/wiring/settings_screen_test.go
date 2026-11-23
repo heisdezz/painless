@@ -14,7 +14,7 @@ func TestSettingsScreenGeneralTogglesStore(t *testing.T) {
 	root := t.TempDir()
 	seedLibrary(t, root).Close()
 	store := newDriveStore(t, root)
-	c := New(store)
+	c := New(store, nil)
 	defer c.Close()
 
 	screen := c.SettingsScreen(nil, func(domain.LogLevel, string, string) {})
@@ -48,7 +48,7 @@ func TestSettingsScreenGeneralTogglesStore(t *testing.T) {
 func TestSettingsScreenSmoke(t *testing.T) {
 	root := t.TempDir()
 	seedLibrary(t, root).Close()
-	c := New(newDriveStore(t, root))
+	c := New(newDriveStore(t, root), nil)
 	defer c.Close()
 
 	var toasts []string

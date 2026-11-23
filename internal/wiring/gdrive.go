@@ -12,6 +12,7 @@ import (
 
 	"painless/internal/domain"
 	"painless/internal/gdrive"
+	"painless/internal/logging"
 	"painless/internal/state"
 	"painless/internal/storage"
 	"painless/internal/ui/screens/settings"
@@ -55,6 +56,9 @@ type GDrive struct {
 
 	// Toast, when set, surfaces background failures.
 	Toast func(level domain.LogLevel, title, body string)
+
+	// logs, when set, receives cloud backup entries for the logs console.
+	logs *logging.Logger
 
 	mu        sync.Mutex
 	cfg       driveSettings
@@ -157,6 +161,7 @@ func (g *GDrive) clientFor() (driveClient, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	logf(g.logs, "gdrive", domain.LogLevelInfo, "client created for service account")
 	g.client, g.clientKey = client, creds
 	return client, g.cfg.GDriveFolderID, nil
 }
@@ -168,12 +173,17 @@ func (g *GDrive) TestConnection() error {
 	client, folderID, err := g.clientFor()
 	g.mu.Unlock()
 	if err != nil {
+		logf(g.logs, "gdrive", domain.LogLevelError, "connection test failed: %v", err)
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gdriveTestTimeout)
 	defer cancel()
-	_, err = client.TestConnection(ctx, folderID)
-	return err
+	if _, err = client.TestConnection(ctx, folderID); err != nil {
+		logf(g.logs, "gdrive", domain.LogLevelError, "connection test failed: %v", err)
+		return err
+	}
+	logf(g.logs, "gdrive", domain.LogLevelInfo, "connection test succeeded (folder %s)", folderLabel(folderID))
+	return nil
 }
 
 // BackupNow uploads a fresh database snapshot and returns a human-readable
@@ -181,13 +191,16 @@ func (g *GDrive) TestConnection() error {
 func (g *GDrive) BackupNow() (string, error) {
 	drive, ok := g.store.State.ActiveDrive()
 	if !ok || drive.Path == "" {
-		return "", errors.New("no active drive")
+		err := errors.New("no active drive")
+		logf(g.logs, "gdrive", domain.LogLevelWarn, "backup failed: %v", err)
+		return "", err
 	}
 	g.mu.Lock()
 	g.refreshLocked()
 	client, folderID, err := g.clientFor()
 	g.mu.Unlock()
 	if err != nil {
+		logf(g.logs, "gdrive", domain.LogLevelError, "backup failed: %v", err)
 		return "", err
 	}
 	var res *gdrive.BackupResult
@@ -199,9 +212,21 @@ func (g *GDrive) BackupNow() (string, error) {
 		return err
 	})
 	if err != nil {
+		logf(g.logs, "gdrive", domain.LogLevelError, "backup failed: %v", err)
 		return "", err
 	}
-	return fmt.Sprintf("Uploaded %s (%s)", res.FileName, formatBytes(res.Size)), nil
+	message := fmt.Sprintf("Uploaded %s (%s)", res.FileName, formatBytes(res.Size))
+	logf(g.logs, "gdrive", domain.LogLevelInfo, "backup complete: %s", message)
+	return message, nil
+}
+
+// folderLabel masks an empty folder ID in log output; the shared-folder
+// case is the common one and reads better than an empty pair of quotes.
+func folderLabel(folderID string) string {
+	if folderID == "" {
+		return "(shared root)"
+	}
+	return folderID
 }
 
 // sqlSnapshotter adapts a raw sql.DB to gdrive.DatabaseSnapshotter with a
