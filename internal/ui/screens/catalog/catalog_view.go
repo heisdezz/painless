@@ -50,7 +50,7 @@ func (s *Screen) gridView(c *mui.Context) {
 	grid := mediagrid.Grid(c, &s.grid, cards).Grow(1)
 	// Double-click or Enter on a focused cell also opens the viewer.
 	if grid.Submitted() && s.selected >= 0 && s.selected < len(items) {
-		s.actions.OpenInViewer(items[s.selected])
+		s.actions.OpenInViewer(items[s.selected], items)
 	}
 }
 

@@ -30,7 +30,7 @@ type Thumbnailer interface {
 // Actions handles the commands offered by cards, the context menu and the
 // batch bar. Screens that are not built yet use NoopActions.
 type Actions interface {
-	OpenInViewer(item domain.MediaItem)
+	OpenInViewer(item domain.MediaItem, all []domain.MediaItem)
 	AssignToAlbum(ids []int64)
 	RemoveFromAlbum(ids []int64)
 	Delete(ids []int64)
@@ -42,13 +42,13 @@ type Actions interface {
 // NoopActions discards commands until the other screens and services land.
 type NoopActions struct{}
 
-func (NoopActions) OpenInViewer(domain.MediaItem) {}
-func (NoopActions) AssignToAlbum([]int64)         {}
-func (NoopActions) RemoveFromAlbum([]int64)       {}
-func (NoopActions) Delete([]int64)                {}
-func (NoopActions) Reveal(domain.MediaItem)       {}
-func (NoopActions) Inspect(domain.MediaItem)      {}
-func (NoopActions) StartScan()                    {}
+func (NoopActions) OpenInViewer(domain.MediaItem, []domain.MediaItem) {}
+func (NoopActions) AssignToAlbum([]int64)                             {}
+func (NoopActions) RemoveFromAlbum([]int64)                           {}
+func (NoopActions) Delete([]int64)                                    {}
+func (NoopActions) Reveal(domain.MediaItem)                           {}
+func (NoopActions) Inspect(domain.MediaItem)                          {}
+func (NoopActions) StartScan()                                        {}
 
 type emptySource struct{}
 

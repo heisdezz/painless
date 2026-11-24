@@ -64,13 +64,15 @@ type fakeActions struct {
 	scanned  bool
 }
 
-func (f *fakeActions) OpenInViewer(item domain.MediaItem) { f.opened = item }
-func (f *fakeActions) AssignToAlbum(ids []int64)          { f.assigned = ids }
-func (f *fakeActions) RemoveFromAlbum([]int64)            {}
-func (f *fakeActions) Delete([]int64)                     {}
-func (f *fakeActions) Reveal(domain.MediaItem)            {}
-func (f *fakeActions) Inspect(domain.MediaItem)           {}
-func (f *fakeActions) StartScan()                         { f.scanned = true }
+func (f *fakeActions) OpenInViewer(item domain.MediaItem, _ []domain.MediaItem) {
+	f.opened = item
+}
+func (f *fakeActions) AssignToAlbum(ids []int64) { f.assigned = ids }
+func (f *fakeActions) RemoveFromAlbum([]int64)   {}
+func (f *fakeActions) Delete([]int64)            {}
+func (f *fakeActions) Reveal(domain.MediaItem)   {}
+func (f *fakeActions) Inspect(domain.MediaItem)  {}
+func (f *fakeActions) StartScan()                { f.scanned = true }
 
 func testItems() []domain.MediaItem {
 	duration := 42

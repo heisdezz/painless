@@ -119,7 +119,7 @@ func (a dashboardActions) NavigateToDiscover()        { a.store.Navigate(state.S
 // OpenViewer deep-links into the viewer screen for the chosen item.
 func (a dashboardActions) OpenViewer(item domain.MediaItem, all []domain.MediaItem) {
 	if a.viewer != nil {
-		a.viewer.Open(item.ID)
+		a.viewer.OpenItem(item, all)
 	}
 	a.store.Navigate(state.ScreenViewer)
 }

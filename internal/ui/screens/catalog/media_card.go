@@ -43,7 +43,7 @@ func (s *Screen) cardClicked(i int, item domain.MediaItem, mods mui.Modifiers) {
 		s.toggleSelection(i)
 	default:
 		s.selected, s.pivot = i, i
-		s.actions.OpenInViewer(item)
+		s.actions.OpenInViewer(item, s.page.Items)
 	}
 }
 

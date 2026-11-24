@@ -27,20 +27,23 @@ type libraryActions struct {
 	viewer   *viewer.Screen
 }
 
-// openViewer loads an item into the viewer screen and navigates to it.
-func (a libraryActions) openViewer(id int64) {
+// openViewer loads an item into the viewer with its navigation context and
+// navigates to it, so the viewer's Next/Prev can step through the same page.
+func (a libraryActions) openViewer(item domain.MediaItem, all []domain.MediaItem) {
 	if a.viewer != nil {
-		a.viewer.Open(id)
+		a.viewer.OpenItem(item, all)
 	}
 	a.store.Navigate(state.ScreenViewer)
 }
 
-func (a libraryActions) OpenInViewer(item domain.MediaItem) { a.openViewer(item.ID) }
-func (a libraryActions) AssignToAlbum([]int64)              {}
-func (a libraryActions) RemoveFromAlbum([]int64)            {}
-func (a libraryActions) Reveal(domain.MediaItem)            {}
-func (a libraryActions) Inspect(item domain.MediaItem)      { a.openViewer(item.ID) }
-func (a libraryActions) StartScan()                         { a.store.Navigate(state.ScreenDiscover) }
+func (a libraryActions) OpenInViewer(item domain.MediaItem, all []domain.MediaItem) {
+	a.openViewer(item, all)
+}
+func (a libraryActions) AssignToAlbum([]int64)         {}
+func (a libraryActions) RemoveFromAlbum([]int64)       {}
+func (a libraryActions) Reveal(domain.MediaItem)       {}
+func (a libraryActions) Inspect(item domain.MediaItem) { a.openViewer(item, nil) }
+func (a libraryActions) StartScan()                    { a.store.Navigate(state.ScreenDiscover) }
 
 // newViewer builds a viewer screen; nil dependencies yield a viewer that
 // shows its empty state until the library controller binds a drive.

@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func TestViewerDeepLink(t *testing.T) {
 	item := page.Items[0]
 
 	actions := libraryActions{store: store, viewer: shell.Viewer()}
-	actions.OpenInViewer(item)
+	actions.OpenInViewer(item, page.Items)
 	if store.State.Screen() != state.ScreenViewer {
 		t.Fatalf("screen after OpenInViewer = %q, want viewer", store.State.Screen())
 	}
@@ -76,6 +77,61 @@ func TestViewerDeepLink(t *testing.T) {
 	empty.OpenViewer(item, nil)
 	if store.State.Screen() != state.ScreenViewer {
 		t.Fatalf("screen without viewer = %q, want viewer", store.State.Screen())
+	}
+}
+
+// A catalog deep-link must carry the page with it: otherwise Next/Prev have
+// an empty item list and silently do nothing.
+func TestViewerDeepLinkKeepsNavigation(t *testing.T) {
+	root := t.TempDir()
+	db, err := storage.Open(root, storage.OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := storage.NewMediaRepo(db)
+	items := []domain.MediaItem{
+		{FileHash: "nav-a", CurrentRelativePath: "photos/a.jpg", MimeType: "image/jpeg", FileSize: 1024},
+		{FileHash: "nav-b", CurrentRelativePath: "photos/b.jpg", MimeType: "image/jpeg", FileSize: 1024},
+	}
+	if _, err := repo.InsertBatch(context.Background(), items); err != nil {
+		t.Fatal(err)
+	}
+	page, err := repo.List(context.Background(), domain.MediaListParams{Limit: 10})
+	if err != nil || len(page.Items) != 2 {
+		t.Fatalf("seeded items = %+v, %v", page, err)
+	}
+
+	store := state.NewStore()
+	shell := New(store)
+	library := newLibraryController(store, shell)
+	store.ApplyDrives([]domain.DriveInfo{{
+		ID: "nav-drive", Name: "Nav drive", Path: root,
+		Type: domain.DriveTypeExternal, Status: domain.DriveStatusMounted, HasLibrary: true,
+	}})
+	library.HandleEvent(state.Event{Kind: state.EventActiveDriveChange})
+
+	first := filepath.Base(page.Items[0].CurrentRelativePath)
+	second := filepath.Base(page.Items[1].CurrentRelativePath)
+	(libraryActions{store: store, viewer: shell.Viewer()}).OpenInViewer(page.Items[0], page.Items)
+	tt := mui.NewTester(shell.View, 1200, 800)
+	tt.Frame()
+	if !tt.HasText(first) {
+		t.Fatalf("viewer texts after deep link = %q", tt.Texts())
+	}
+	if err := tt.Click("Next Item"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText(second) {
+		t.Fatalf("Next Item did not advance: %q", tt.Texts())
+	}
+	if err := tt.Click("Previous Item"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !tt.HasText(first) {
+		t.Fatalf("Previous Item did not go back: %q", tt.Texts())
 	}
 }
 

@@ -32,7 +32,7 @@ func (s *Screen) handleContext(key string, item domain.MediaItem) {
 	}
 	switch key {
 	case "open":
-		s.actions.OpenInViewer(item)
+		s.actions.OpenInViewer(item, s.page.Items)
 	case "toggle":
 		s.toggleSelectionByID(item.ID)
 	case "assign":
