@@ -46,28 +46,49 @@ func (s *Screen) renderVideoPlayer(c *mui.Context, tk *lobetheme.Tokens, item *d
 			cursor = mui.CursorGrabbing
 		}
 		stageBox := mui.Box(c).Grow(1).Basis(0).Center().Clip().Cursor(cursor)
-		// Take the wheel and Ctrl+drag anywhere on the stage, including the
+		// Take the wheel and drag anywhere on the stage, including the
 		// letterboxed margins: the video element itself may not be under the
 		// pointer, and the pressed element keeps the drag moves.
 		stageBox.HandleInput(s.handleVideoInput).Children(func() {
+			s.mu.RLock()
+			loading, videoErr := s.videoLoading, s.videoErr
+			zoom, panX, panY := s.videoZoom, s.videoPanX, s.videoPanY
+			s.mu.RUnlock()
 			if s.videoPlayer != nil {
 				// Contain keeps the player's aspect ratio while filling the
 				// stage; the system engine decodes at the source ratio.
 				// Scaling about the box's top-left and panning by the
 				// pointer-anchored offset zooms into the pixel under the
 				// mouse, not the middle of the frame.
-				s.mu.RLock()
-				zoom, panX, panY := s.videoZoom, s.videoPanX, s.videoPanY
-				s.mu.RUnlock()
 				mui.Video(c, s.videoPlayer).Fill().Fit(mui.Contain).
 					Transform(mui.Scaling(zoom, zoom).Then(mui.Translation(panX, panY))).
 					TransformOrigin(0, 0)
+				// Keep the spinner up until the first picture is ready. The
+				// Video element above is still built, so the engine can
+				// load and wake the frame that takes it away.
+				if loading || !s.videoPlayer.Ready() {
+					renderVideoLoading(c, tk, "Loading video…")
+				}
+			} else if loading {
+				renderVideoLoading(c, tk, "Loading video…")
+			} else if videoErr != "" {
+				mui.Text(c, videoErr).FontSize(13).TextColor(tk.TextTertiary)
 			} else {
 				mui.Text(c, "No video preview available").
 					FontSize(13).TextColor(tk.TextTertiary)
 			}
 		})
 		s.videoControlsBar(c, tk, item)
+	})
+}
+
+// renderVideoLoading overlays a quiet spinner while a player opens or waits
+// for its first frame, so the stage doesn't claim there is no video yet.
+func renderVideoLoading(c *mui.Context, tk *lobetheme.Tokens, label string) {
+	mui.Column(c).Absolute().Fill().Center().Gap(12).PassThrough().Children(func() {
+		spin := mui.Icon(c, lucide.LoaderCircle()).FontSize(28).TextColor(tk.TextTertiary)
+		spin.Rotate(spin.Loop("video-loading", time.Second, mui.Linear) * 360)
+		mui.Text(c, label).FontSize(12).TextColor(tk.TextTertiary)
 	})
 }
 
@@ -213,6 +234,8 @@ func (s *Screen) ensureVideoInitialized(item *domain.MediaItem) {
 
 	s.stopVideoLocked()
 	s.videoHash = item.FileHash
+	s.videoLoading = true
+	s.videoErr = ""
 
 	var fullPath string
 	if s.driveRoot != "" {
@@ -227,6 +250,8 @@ func (s *Screen) ensureVideoInitialized(item *domain.MediaItem) {
 	}
 	player, err := opener(fullPath)
 	if err != nil {
+		s.videoErr = "No video preview available"
+		s.videoLoading = false
 		return
 	}
 	// The player starts playing as soon as it is shown; with autoplay off,
@@ -236,6 +261,7 @@ func (s *Screen) ensureVideoInitialized(item *domain.MediaItem) {
 		player.Pause()
 	}
 	s.videoPlayer = player
+	s.videoLoading = false
 }
 
 func (s *Screen) videoControlsBar(c *mui.Context, tk *lobetheme.Tokens, item *domain.MediaItem) {
@@ -379,6 +405,8 @@ func (s *Screen) stopVideoLocked() {
 	s.videoZoom, s.videoPanX, s.videoPanY = 1, 0, 0
 	s.videoPanning = false
 	s.videoPointerDown = false
+	s.videoLoading = false
+	s.videoErr = ""
 
 	if s.throttler != nil {
 		s.throttler.Resume()

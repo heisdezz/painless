@@ -83,8 +83,10 @@ type Screen struct {
 	loadedHash      string
 
 	// Video state
-	videoPlayer *mui.VideoPlayer
-	videoHash   string
+	videoPlayer  *mui.VideoPlayer
+	videoHash    string
+	videoLoading bool
+	videoErr     string
 
 	// Video zoom: scale about the video box's top-left, with a pan that
 	// keeps the point under the pointer in place while zooming.
