@@ -77,14 +77,19 @@ func (s *Screen) driveCard(c *mui.Context, tk *lobetheme.Tokens, drive domain.Dr
 	c.Key(fmt.Sprintf("drive-%s", drive.ID))
 
 	isMounted := drive.Status == "mounted" || drive.Path != ""
+	isSystemBoot := drive.IsSystemBoot()
+	isSelectable := isMounted && !isSystemBoot
 
-	mui.Column(c).Width(320).Padding(20).Radius(16).
-		Background(tk.BgContainer).Border(1, tk.BorderSecondary).
-		OnClick(func() {
-			if isMounted {
-				s.actions.SelectDrive(drive.ID)
-			}
-		}).Children(func() {
+	card := mui.Column(c).Width(320).Padding(20).Radius(16).
+		Background(tk.BgContainer).Border(1, tk.BorderSecondary)
+	if isSystemBoot {
+		card.Opacity(0.55)
+	}
+	card.OnClick(func() {
+		if isSelectable {
+			s.actions.SelectDrive(drive.ID)
+		}
+	}).Children(func() {
 		// Top row: Drive Icon, Name, and Mount Tag
 		mui.Row(c).AlignItems(mui.Center).Gap(12).Children(func() {
 			// Drive squircle icon container
@@ -108,7 +113,11 @@ func (s *Screen) driveCard(c *mui.Context, tk *lobetheme.Tokens, drive domain.Dr
 			})
 
 			// Mount status tag
-			if isMounted {
+			if isSystemBoot {
+				display.Tag(c, "System Boot", display.TagProps{
+					Size: lobetheme.Small,
+				})
+			} else if isMounted {
 				display.Tag(c, "Mounted", display.TagProps{
 					Size:    lobetheme.Small,
 					Color:   display.TagSuccess,

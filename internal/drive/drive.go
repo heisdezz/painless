@@ -36,6 +36,9 @@ func (s *Service) AddCustomMount(path string, label string) (*domain.DriveInfo, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
+	if domain.IsSystemBootPath(cleanPath) {
+		return nil, fmt.Errorf("cannot mount system boot path %s", cleanPath)
+	}
 
 	fi, err := os.Stat(cleanPath)
 	if err != nil {

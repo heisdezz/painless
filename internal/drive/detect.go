@@ -52,7 +52,7 @@ func detectSystemDrives(ctx context.Context) ([]domain.DriveInfo, error) {
 		}
 
 		cleanMount := filepath.Clean(part.Mountpoint)
-		if cleanMount == "" {
+		if cleanMount == "" || domain.IsSystemBootPath(cleanMount) {
 			continue
 		}
 		if _, already := seen[cleanMount]; already {

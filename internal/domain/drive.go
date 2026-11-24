@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"path/filepath"
+	"strings"
+	"time"
+)
 
 // DriveType categorizes the storage medium.
 type DriveType string
@@ -50,4 +54,46 @@ type DriveEvent struct {
 	Type      DriveEventType `json:"type"`
 	Drive     DriveInfo      `json:"drive"`
 	Timestamp time.Time      `json:"timestamp"`
+}
+
+var systemBootMountPrefixes = []string{
+	"/boot",
+	"/efi",
+	"/esp",
+	"/sys",
+	"/proc",
+	"/dev",
+	"/run/initramfs",
+	"/snap",
+	"/volumes/efi",
+	"/volumes/preboot",
+	"/volumes/recovery",
+	"/system/volumes/preboot",
+	"/system/volumes/recovery",
+	"/system/volumes/vm",
+	"/system/volumes/update",
+	"/system/volumes/iscpreboot",
+	"/system/volumes/xarts",
+	"/system/volumes/hardware",
+}
+
+// IsSystemBootPath reports whether mountPath points to an OS runtime or
+// system boot partition (such as /boot, /boot/efi, or /efi) that must not
+// be selected as a media library drive.
+func IsSystemBootPath(mountPath string) bool {
+	if strings.TrimSpace(mountPath) == "" {
+		return false
+	}
+	normalized := strings.ToLower(filepath.ToSlash(filepath.Clean(mountPath)))
+	for _, prefix := range systemBootMountPrefixes {
+		if normalized == prefix || strings.HasPrefix(normalized, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSystemBoot reports whether the drive's mount path is a system boot point.
+func (d DriveInfo) IsSystemBoot() bool {
+	return IsSystemBootPath(d.Path)
 }

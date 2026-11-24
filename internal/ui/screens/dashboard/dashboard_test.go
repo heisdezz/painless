@@ -223,6 +223,39 @@ func TestDashboard_DrivePickerWithDrives(t *testing.T) {
 	}
 }
 
+func TestDashboard_DrivePickerBlocksSystemBootDrive(t *testing.T) {
+	efi := domain.DriveInfo{
+		ID:         "/boot/efi",
+		Name:       "efi",
+		Path:       "/boot/efi",
+		Type:       domain.DriveTypeInternal,
+		Status:     domain.DriveStatusMounted,
+		TotalBytes: 512 << 20,
+	}
+	actions := &recordedActions{}
+	screen := New(Options{
+		DriveSource: &mockDriveSource{drives: []domain.DriveInfo{efi}},
+		Actions:     actions,
+	})
+
+	time.Sleep(50 * time.Millisecond)
+
+	tt := mui.NewTester(screen.View, 1200, 800)
+	if !tt.HasText("System Boot") {
+		t.Fatalf("expected System Boot tag, got: %q", tt.Texts())
+	}
+	if err := tt.Click("efi"); err != nil {
+		t.Fatalf("failed to click drive card: %v", err)
+	}
+
+	actions.mu.Lock()
+	selected := actions.selected
+	actions.mu.Unlock()
+	if selected != "" {
+		t.Fatalf("expected system boot drive not to be selected, got: %s", selected)
+	}
+}
+
 func TestDashboard_MountedView(t *testing.T) {
 	drive := testDrive()
 	src := &mockDashboardSource{

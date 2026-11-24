@@ -116,22 +116,26 @@ func (s *AppState) SetDrives(drives []domain.DriveInfo) (prevActiveID string, ac
 	prevActiveID = s.activeID
 	s.drives = append([]domain.DriveInfo(nil), drives...)
 	for _, d := range s.drives {
-		if d.ID == s.activeID {
+		if d.ID == prevActiveID && !d.IsSystemBoot() {
+			s.activeID = d.ID
 			return prevActiveID, true
 		}
 	}
-	// Active drive vanished: fall back to the first drive with a library,
-	// else the first drive, else none.
+	// Active drive vanished: fall back to the first selectable drive with a
+	// library, else the first selectable drive, else none.
 	s.activeID = ""
-	if len(s.drives) > 0 {
+	for _, d := range s.drives {
+		if !d.IsSystemBoot() && d.HasLibrary {
+			s.activeID = d.ID
+			break
+		}
+	}
+	if s.activeID == "" {
 		for _, d := range s.drives {
-			if d.HasLibrary {
+			if !d.IsSystemBoot() {
 				s.activeID = d.ID
 				break
 			}
-		}
-		if s.activeID == "" {
-			s.activeID = s.drives[0].ID
 		}
 	}
 	return prevActiveID, false
@@ -174,6 +178,9 @@ func (s *AppState) SetActiveDrive(id string) bool {
 	defer s.mu.Unlock()
 	for _, d := range s.drives {
 		if d.ID == id {
+			if d.IsSystemBoot() {
+				return false
+			}
 			changed := s.activeID != id
 			s.activeID = id
 			return changed

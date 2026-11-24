@@ -91,6 +91,32 @@ func TestSetActiveDrive(t *testing.T) {
 	}
 }
 
+func TestSystemBootDriveCannotBeSelected(t *testing.T) {
+	s := New()
+	efi := domain.DriveInfo{ID: "/boot/efi", Name: "efi", Path: "/boot/efi", HasLibrary: true}
+	usb := domain.DriveInfo{ID: "/run/media/user/USB", Name: "USB", Path: "/run/media/user/USB"}
+
+	// Auto-selection skips system boot drives even when HasLibrary is true.
+	s.SetDrives([]domain.DriveInfo{efi, usb})
+	if got := s.ActiveDriveID(); got != usb.ID {
+		t.Fatalf("auto-selected active = %q, want %q", got, usb.ID)
+	}
+
+	// Explicit selection refuses system boot drives.
+	if s.SetActiveDrive(efi.ID) {
+		t.Fatal("SetActiveDrive should reject system boot drive")
+	}
+	if got := s.ActiveDriveID(); got != usb.ID {
+		t.Fatalf("active = %q, want %q", got, usb.ID)
+	}
+
+	// When only a system boot drive is present, nothing is selected.
+	s.SetDrives([]domain.DriveInfo{efi})
+	if got := s.ActiveDriveID(); got != "" {
+		t.Fatalf("active = %q, want empty", got)
+	}
+}
+
 func TestDrivesCopy(t *testing.T) {
 	s := New()
 	s.SetDrives([]domain.DriveInfo{{ID: "a"}})

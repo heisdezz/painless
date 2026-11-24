@@ -83,7 +83,11 @@ func (s *Shell) driveSelect(c *mui.Context, tk *lobetheme.Tokens) {
 
 	options := make([]field.SelectOption, 0, len(drives))
 	for _, drive := range drives {
-		options = append(options, field.SelectOption{Value: drive.ID, Label: drive.Name})
+		options = append(options, field.SelectOption{
+			Value:    drive.ID,
+			Label:    drive.Name,
+			Disabled: drive.IsSystemBoot(),
+		})
 	}
 	selected := s.store.State.ActiveDriveID()
 	field.Select(c, &selected, field.SelectProps{

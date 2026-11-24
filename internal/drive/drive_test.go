@@ -28,6 +28,18 @@ func TestSystemDriveDetection(t *testing.T) {
 		if d.Path == "" || d.ID == "" {
 			t.Errorf("drive has empty ID or Path: %+v", d)
 		}
+		if d.IsSystemBoot() {
+			t.Errorf("system boot drive should be filtered out: %+v", d)
+		}
+	}
+}
+
+func TestAddCustomMountRejectsSystemBootPath(t *testing.T) {
+	svc := NewService()
+	for _, p := range []string{"/boot", "/boot/efi", "/efi"} {
+		if _, err := svc.AddCustomMount(p, "Boot"); err == nil {
+			t.Errorf("AddCustomMount(%q) succeeded, want error", p)
+		}
 	}
 }
 
