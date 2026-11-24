@@ -17,6 +17,7 @@ import (
 	"painless/internal/server/mobile"
 	"painless/internal/state"
 	"painless/internal/storage"
+	"painless/internal/thumbnail"
 	"painless/internal/ui/screens/settings"
 )
 
@@ -162,6 +163,8 @@ func (m *Mobile) startLocked() error {
 		// Best effort: an unwritable drive still gets a session token.
 		_ = m.cfg.save(root)
 	}
+
+	thumbs := thumbnail.New(thumbnail.Options{DriveRoot: root, Store: m.store})
 	srv := mobile.New(mobile.Options{
 		Port:      m.portLocked(),
 		Token:     token,
@@ -174,6 +177,7 @@ func (m *Mobile) startLocked() error {
 		// before the handle closes, so they never race a Close.
 		LibraryStats:     func() *mobile.LibraryStats { s := libraryStats(db, libRoot); return &s },
 		DatabaseSnapshot: dbSnapshotter(db),
+		Thumbnails:       thumbs,
 	})
 	if err := srv.Start(); err != nil {
 		_ = db.Close()
