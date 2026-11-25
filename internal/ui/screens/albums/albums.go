@@ -5,6 +5,8 @@ package albums
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -78,8 +80,10 @@ type Options struct {
 	ReadOnly      bool
 	// OnOpenItem, when set, is invoked when a member card is clicked; the
 	// shell attaches the media viewer deep-link here.
-	OnOpenItem func(item domain.MediaItem)
+	OnOpenItem func(item domain.MediaItem, all []domain.MediaItem)
 }
+
+const detailDebounceDelay = 250 * time.Millisecond
 
 // Screen manages album browsing, member viewing, and modal lifecycle.
 type Screen struct {
@@ -90,7 +94,7 @@ type Screen struct {
 	refreshWindow func()
 	driveRoot     string
 	readOnly      bool
-	onOpenItem    func(domain.MediaItem)
+	onOpenItem    func(domain.MediaItem, []domain.MediaItem)
 
 	// Member-thumbnail cache. bitmapMu guards the maps; workers never touch
 	// *mui.Context, decoded bitmaps are only swapped in on the UI thread.
@@ -107,6 +111,8 @@ type Screen struct {
 	detailItems   []domain.MediaItem
 	detailTotal   int
 	searchQuery   string
+	galleryFilter int
+	gallerySort   int
 	loadErr       error
 
 	// Async gallery & detail loads. The channels carry worker results to the
@@ -122,10 +128,18 @@ type Screen struct {
 	detailReveal   *mediacard.Reveal
 
 	// memberPage is the 1-based member page; nav.Pagination mutates it in
-	// place. membersFor caches which album+page the member list came from.
-	// Both are used on the UI thread only.
-	memberPage int
-	membersFor string
+	// place. membersFor caches which album+page+query+filter+sort the member
+	// list came from. Used on the UI thread only.
+	memberPage           int
+	membersFor           string
+	detailQuery          string
+	detailLastQuery      string
+	detailCommittedQuery string
+	detailQueryChangedAt time.Time
+	detailDebounceTimer  *time.Timer
+	detailFilter         int
+	detailSort           int
+	detailLastBaseKey    string
 
 	// Create Modal state
 	createOpen bool
@@ -180,7 +194,7 @@ func New(opts Options) *Screen {
 
 // SetOnOpenItem attaches the open-in-viewer action after construction. Call
 // before the window is shown; the callback runs on the UI thread.
-func (s *Screen) SetOnOpenItem(fn func(item domain.MediaItem)) {
+func (s *Screen) SetOnOpenItem(fn func(item domain.MediaItem, all []domain.MediaItem)) {
 	s.onOpenItem = fn
 }
 
@@ -249,7 +263,11 @@ func (s *Screen) View(c *mui.Context) {
 	uitheme.Apply(c)
 	tk := lobetheme.TokensOf(c)
 
-	container := mui.Column(c).Fill().Padding(28, 28, 40).Gap(16)
+	paddingTop, paddingBottom, gap := float32(20), float32(24), float32(12)
+	if s.selectedAlbum != nil {
+		paddingTop, paddingBottom, gap = 14, 16, 10
+	}
+	container := mui.Column(c).Fill().Padding(paddingTop, 28, paddingBottom).Gap(gap)
 	container.Children(func() {
 		if s.selectedAlbum == nil {
 			s.galleryView(c, tk)
@@ -280,6 +298,17 @@ func (s *Screen) OpenAlbum(summary domain.AlbumSummary) {
 	s.detailTotal = 0
 	s.memberPage = 1
 	s.membersFor = ""
+	s.detailFetchKey = ""
+	s.detailQuery = ""
+	s.detailLastQuery = ""
+	s.detailCommittedQuery = ""
+	s.detailFilter = 0
+	s.detailSort = 0
+	s.detailLastBaseKey = ""
+	if s.detailDebounceTimer != nil {
+		s.detailDebounceTimer.Stop()
+		s.detailDebounceTimer = nil
+	}
 	s.mu.Unlock()
 
 	s.loadDetailItems(summary.ID)
@@ -311,28 +340,78 @@ func (s *Screen) SearchQuery() string {
 	return s.searchQuery
 }
 
+// syncDetailSearch commits the album detail search query once typing pauses.
+func (s *Screen) syncDetailSearch() {
+	if s.detailQuery != s.detailLastQuery {
+		s.detailLastQuery = s.detailQuery
+		s.detailQueryChangedAt = time.Now()
+		if s.detailDebounceTimer != nil {
+			s.detailDebounceTimer.Stop()
+		}
+		services := s.services
+		s.detailDebounceTimer = time.AfterFunc(detailDebounceDelay, services.Invalidate)
+	}
+	if s.detailQuery != s.detailCommittedQuery && time.Since(s.detailQueryChangedAt) >= detailDebounceDelay {
+		s.detailCommittedQuery = s.detailQuery
+	}
+}
+
+func detailBaseKey(albumID int64, query string, filter, sort int) string {
+	return strings.Join([]string{
+		strconv.FormatInt(albumID, 10),
+		query,
+		strconv.Itoa(filter),
+		strconv.Itoa(sort),
+	}, "|")
+}
+
+func (s *Screen) detailListParams(albumID int64, page int) domain.MediaListParams {
+	params := domain.MediaListParams{
+		AlbumID:   &albumID,
+		Search:    s.detailCommittedQuery,
+		SortBy:    domain.SortByDate,
+		SortOrder: domain.SortOrderDesc,
+		Limit:     memberPageSize,
+		Offset:    (page - 1) * memberPageSize,
+	}
+	switch s.detailFilter {
+	case 1:
+		params.Filter = domain.MediaFilterImages
+	case 2:
+		params.Filter = domain.MediaFilterVideos
+	}
+	switch s.detailSort {
+	case 1:
+		params.SortOrder = domain.SortOrderAsc
+	case 2:
+		params.SortBy, params.SortOrder = domain.SortByName, domain.SortOrderAsc
+	case 3:
+		params.SortBy = domain.SortBySize
+	}
+	return params
+}
+
 // loadDetailItems fetches one page of the album's members off-thread; the
 // detail view shows its skeleton until the result drains. The album ID and
-// page are read on the calling (UI) thread and captured by the worker.
+// query state are read on the calling (UI) thread and captured by the worker.
 func (s *Screen) loadDetailItems(albumID int64) {
 	if s.media == nil {
 		return
 	}
 	s.mu.Lock()
 	page := s.memberPage
+	if page < 1 {
+		page = 1
+	}
+	params := s.detailListParams(albumID, page)
+	key := fmt.Sprintf("%s|%d", detailBaseKey(albumID, s.detailCommittedQuery, s.detailFilter, s.detailSort), page)
 	s.detailLoading = true
-	s.detailFetchKey = fmt.Sprintf("%d|%d", albumID, page)
+	s.detailFetchKey = key
 	s.mu.Unlock()
 	media, ch, services := s.media, s.detailChan, s.services
 	go func() {
-		result, err := media.List(context.Background(), domain.MediaListParams{
-			AlbumID:   &albumID,
-			SortBy:    domain.SortByDate,
-			SortOrder: domain.SortOrderDesc,
-			Limit:     memberPageSize,
-			Offset:    (page - 1) * memberPageSize,
-		})
-		r := detailResult{key: fmt.Sprintf("%d|%d", albumID, page), err: err}
+		result, err := media.List(context.Background(), params)
+		r := detailResult{key: key, err: err}
 		if result != nil {
 			r.items, r.total = result.Items, result.Total
 		}
@@ -341,11 +420,17 @@ func (s *Screen) loadDetailItems(albumID int64) {
 	}()
 }
 
-// ensureDetailItems refetches members when the album or page changed, e.g.
-// after nav.Pagination mutates memberPage in place, or when a fetch for the
-// wanted key is already in flight.
+// ensureDetailItems refetches members when the album, page, search, filter, or
+// sort changed, e.g. after nav.Pagination mutates memberPage in place, or when
+// a fetch for the wanted key is already in flight.
 func (s *Screen) ensureDetailItems(albumID int64) {
-	want := fmt.Sprintf("%d|%d", albumID, s.memberPage)
+	s.syncDetailSearch()
+	base := detailBaseKey(albumID, s.detailCommittedQuery, s.detailFilter, s.detailSort)
+	if base != s.detailLastBaseKey {
+		s.memberPage = 1
+		s.detailLastBaseKey = base
+	}
+	want := fmt.Sprintf("%s|%d", base, s.memberPage)
 	s.mu.RLock()
 	current, fetching := s.membersFor, s.detailFetchKey
 	s.mu.RUnlock()

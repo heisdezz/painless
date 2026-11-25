@@ -142,7 +142,8 @@ func TestViewerBackReturnsToAlbums(t *testing.T) {
 	shell := New(store)
 
 	store.Navigate(state.ScreenAlbums)
-	shell.openInViewer(domain.MediaItem{ID: 1, CurrentRelativePath: "photos/a.jpg"})
+	item := domain.MediaItem{ID: 1, CurrentRelativePath: "photos/a.jpg"}
+	shell.openInViewer(item, []domain.MediaItem{item})
 	if store.State.Screen() != state.ScreenViewer {
 		t.Fatalf("screen after openInViewer = %q, want viewer", store.State.Screen())
 	}

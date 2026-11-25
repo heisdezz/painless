@@ -109,10 +109,11 @@ func (s *Shell) SetAlbums(a *albums.Screen) {
 	s.albums = a
 }
 
-// openInViewer loads an item into the current viewer screen and navigates to it.
-func (s *Shell) openInViewer(item domain.MediaItem) {
+// openInViewer loads an item into the current viewer screen with its album
+// navigation context and navigates to it.
+func (s *Shell) openInViewer(item domain.MediaItem, all []domain.MediaItem) {
 	if v := s.viewer; v != nil {
-		v.Open(item.ID)
+		v.OpenItem(item, all)
 	}
 	s.store.Navigate(state.ScreenViewer)
 }

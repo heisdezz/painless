@@ -70,4 +70,49 @@ func TestAlbumMemberOpensViewer(t *testing.T) {
 	if !shell.Viewer().IsOpen() {
 		t.Fatal("viewer is not open after album member click")
 	}
+
+	// Seed a second item in the album and verify Next/Previous navigation works.
+	db2, err := storage.Open(root, storage.OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo2 := storage.NewMediaRepo(db2)
+	second := domain.MediaItem{
+		FileHash:            "album-second-hash",
+		CurrentRelativePath: "media/albums/Trip/second.mp4",
+		FileSize:            4096,
+		MimeType:            "video/mp4",
+	}
+	if _, err := repo2.InsertBatch(context.Background(), []domain.MediaItem{second}); err != nil {
+		t.Fatal(err)
+	}
+	inserted, err := repo2.GetByHash(context.Background(), second.FileHash)
+	if err != nil || inserted == nil {
+		t.Fatalf("get second item: %v", err)
+	}
+	if _, err := repo2.MoveToAlbum(context.Background(), album.ID, []int64{inserted.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db2.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store.Navigate(state.ScreenAlbums)
+	shell.Albums().OpenAlbum(domain.AlbumSummary{ID: album.ID, Name: "Trip"})
+	tt.Frame()
+	if !tt.HasText("second.mp4") {
+		t.Fatalf("album detail did not render second.mp4: %q", tt.Texts())
+	}
+	if err := tt.Click("album.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	firstID := shell.Viewer().CurrentItem().ID
+	shell.Viewer().NextItem()
+	if got := shell.Viewer().CurrentItem().ID; got == firstID {
+		t.Fatalf("NextItem did not advance from item %d", firstID)
+	}
+	shell.Viewer().PrevItem()
+	if got := shell.Viewer().CurrentItem().ID; got != firstID {
+		t.Fatalf("PrevItem returned %d, want %d", got, firstID)
+	}
 }

@@ -10,24 +10,29 @@ The Album Management interface organizes media into physical collections on the 
 
 ### 1. Album Gallery (`internal/ui/screens/albums/gallery_view.go`)
 
-- Responsive grid of album cards (`layout.Grid`).
+- Flat borderless filter bar (`galleryFilterBar`) above the grid (no glass blur overlay):
+  - `field.SearchBar`: "Search albums..." matching album names and descriptions.
+  - `action.Segmented`: `All`, `With media`, `Empty`.
+  - Count tag (`display.Tag`): `%d albums` (or `Loading…` during the initial fetch).
+  - `field.Select`: Sort order (`Name A-Z`, `Most items`, `Largest size`, `Newest first`).
+  - `action.Button` (`Primary`): "New Album".
+- Responsive grid of album cards (`layout.Grid`) scrolling cleanly beneath the bar.
 - Each album card displays:
-  - Album cover preview with rounded frame.
-  - Album Title & Description.
-  - Item count tag: `github.com/lobehub/lobe-mygo/pkg/display.Tag` (e.g. `142 items`).
-  - Context menu trigger (`action.ActionIcon` with `lucide.MoreVertical`).
-- Empty state: `github.com/lobehub/lobe-mygo/pkg/display.Empty` when no albums exist, prompting user to create one.
-- Top bar action button: `action.Button` with `lucide.Plus` ("Create New Album").
+  - Album cover preview clipped to the card's rounded frame.
+  - Album title and item count tag (`display.Tag`).
+  - Description or compact album size / occupancy subtitle.
+  - Open button and quiet `action.ActionIcon` triggers (Edit, Merge, Delete).
+- Empty states (`display.Empty`): "No albums yet" with a "Create Your First Album" button when no albums exist, or "No matching albums" when active filters match nothing.
 
 ### 2. Album Detail View (`internal/ui/screens/albums/detail_view.go`)
 
-- Header banner with album title, editable description (`field.EditableText`), total file size, and item count.
-- Action toolbar:
-  - `action.Button`: "Add Media"
-  - `action.Button`: "Validate Files"
-  - `action.Button`: "Merge Into Another Album"
-  - `action.Button`: "Delete Album" (Danger variant)
-- Media grid displaying members of the selected album.
+- Compact borderless header bar (`Shrink(0)`) with:
+  - `action.Button`: "Back to Albums"
+  - Album title, item count tag (`display.Tag`), and total size tag (`display.Tag`)
+  - Quiet `action.ActionIcon` triggers on the right: Edit (`lucide.Pencil`), Merge (`lucide.GitMerge`), and Delete (`lucide.Trash2`, danger)
+  - Optional single-line album description below the header row (omitted when empty), followed by a 1px hairline divider (`BorderSecondary`)
+- Filter bar (`detailFilterBar`): `field.SearchBar` ("Search album media"), `action.Segmented` (`All`, `Photos`, `Videos`), and `field.Select` sort order.
+- Media grid (`mediagrid.Strip`) displaying members of the selected album with pagination (`nav.Pagination`).
 
 ---
 

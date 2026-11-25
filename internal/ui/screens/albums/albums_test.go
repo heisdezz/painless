@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -180,9 +181,19 @@ func (m *mockMediaRepo) List(ctx context.Context, params domain.MediaListParams)
 	m.mu.Unlock()
 	var filtered []domain.MediaItem
 	for _, it := range m.items {
-		if params.AlbumID != nil && it.AlbumID != nil && *it.AlbumID == *params.AlbumID {
-			filtered = append(filtered, it)
+		if params.AlbumID != nil && (it.AlbumID == nil || *it.AlbumID != *params.AlbumID) {
+			continue
 		}
+		if params.Filter == domain.MediaFilterImages && it.Type() != domain.MediaTypeImage {
+			continue
+		}
+		if params.Filter == domain.MediaFilterVideos && it.Type() != domain.MediaTypeVideo {
+			continue
+		}
+		if params.Search != "" && !strings.Contains(strings.ToLower(it.CurrentRelativePath), strings.ToLower(params.Search)) {
+			continue
+		}
+		filtered = append(filtered, it)
 	}
 	total := len(filtered)
 	if params.Offset > len(filtered) {
@@ -238,10 +249,14 @@ func TestAlbumMemberCardOpensViewer(t *testing.T) {
 	}}
 
 	var opened domain.MediaItem
+	var openedAll []domain.MediaItem
 	screen := New(Options{
-		Albums:     repo,
-		Media:      mediaRepo,
-		OnOpenItem: func(item domain.MediaItem) { opened = item },
+		Albums: repo,
+		Media:  mediaRepo,
+		OnOpenItem: func(item domain.MediaItem, all []domain.MediaItem) {
+			opened = item
+			openedAll = all
+		},
 	})
 	screen.OpenAlbum(repo.summaries[0])
 
@@ -252,6 +267,9 @@ func TestAlbumMemberCardOpensViewer(t *testing.T) {
 	}
 	if opened.ID != 101 {
 		t.Fatalf("member click opened item %+v, want id 101", opened)
+	}
+	if len(openedAll) != 1 || openedAll[0].ID != 101 {
+		t.Fatalf("member click opened context %+v, want [101]", openedAll)
 	}
 }
 
@@ -566,5 +584,170 @@ func TestAlbumMemberThumbnailsDisabled(t *testing.T) {
 	}
 	if len(screen.bitmaps) == 0 {
 		t.Fatal("enabled setting decoded no bitmaps")
+	}
+}
+
+func TestAlbumDetailFilterSortAndSearch(t *testing.T) {
+	repo := newMockAlbumRepo()
+	albumID := int64(1)
+	mediaRepo := &mockMediaRepo{items: []domain.MediaItem{
+		{ID: 101, FileHash: "h1", AlbumID: &albumID, CurrentRelativePath: "photos/beach.jpg", FileSize: 2048, MimeType: "image/jpeg"},
+		{ID: 102, FileHash: "h2", AlbumID: &albumID, CurrentRelativePath: "videos/waves.mp4", FileSize: 8192, MimeType: "video/mp4"},
+	}}
+
+	screen := New(Options{Albums: repo, Media: mediaRepo})
+	screen.OpenAlbum(repo.summaries[0])
+
+	tt := mui.NewTester(screen.View, 1000, 700)
+	waitMembers(t, tt, screen, "beach.jpg")
+	if !tt.HasText("waves.mp4") {
+		t.Fatalf("expected both items initially, got: %q", tt.Texts())
+	}
+
+	// Filter to Photos
+	if err := tt.Click("Photos"); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, tt, func() bool {
+		mediaRepo.mu.Lock()
+		last := mediaRepo.last
+		mediaRepo.mu.Unlock()
+		return last.Filter == domain.MediaFilterImages && !tt.HasText("waves.mp4")
+	})
+
+	// Filter back to All and change sort order
+	tt.Advance(300 * time.Millisecond)
+	tt.Frame()
+	if err := tt.Click("All"); err != nil {
+		t.Fatal(err)
+	}
+	waitMembers(t, tt, screen, "waves.mp4")
+
+	if err := tt.Click("Newest first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("Name A-Z"); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, tt, func() bool {
+		mediaRepo.mu.Lock()
+		last := mediaRepo.last
+		mediaRepo.mu.Unlock()
+		return last.SortBy == domain.SortByName && last.SortOrder == domain.SortOrderAsc
+	})
+
+	// Debounced search
+	screen.detailQuery = "waves"
+	tt.Frame()
+	time.Sleep(detailDebounceDelay + 30*time.Millisecond)
+	waitUntil(t, tt, func() bool {
+		mediaRepo.mu.Lock()
+		last := mediaRepo.last
+		mediaRepo.mu.Unlock()
+		return last.Search == "waves" && !tt.HasText("beach.jpg") && tt.HasText("waves.mp4")
+	})
+}
+
+func TestAlbumDetailHeaderCompactAndActions(t *testing.T) {
+	repo := newMockAlbumRepo()
+	albumID := int64(3)
+	noDesc := domain.AlbumSummary{
+		Album:      domain.Album{ID: albumID, Name: "_sami.c", RelativePath: "albums/_sami.c"},
+		MediaCount: 1935,
+		TotalBytes: 1024 * 1024 * 1024 * 10,
+	}
+	mediaRepo := &mockMediaRepo{items: []domain.MediaItem{
+		{ID: 301, AlbumID: &albumID, CurrentRelativePath: "videos/clip.mp4", FileSize: 2048, MimeType: "video/mp4"},
+	}}
+
+	screen := New(Options{Albums: repo, Media: mediaRepo})
+	screen.OpenAlbum(noDesc)
+
+	tt := mui.NewTester(screen.View, 700, 600)
+	waitMembers(t, tt, screen, "clip.mp4")
+
+	if tt.HasText("No description provided.") {
+		t.Fatalf("empty description should not render placeholder text: %q", tt.Texts())
+	}
+	cardRect, ok := tt.Find("card clip.mp4")
+	if !ok {
+		t.Fatal("first member card not found")
+	}
+	if cardRect.Y >= 120 {
+		t.Fatalf("member card starts too low at Y=%.1f (compact header should sit under 120px)", cardRect.Y)
+	}
+
+	// Verify header action icons are reachable and open their modals.
+	if err := tt.Click("Edit album info"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("Edit Album Details") {
+		t.Fatalf("expected edit modal after clicking header edit action, got: %q", tt.Texts())
+	}
+}
+
+func TestAlbumGalleryFilterBarAndSort(t *testing.T) {
+	repo := newMockAlbumRepo()
+	now := time.Now()
+	repo.summaries = append(repo.summaries, domain.AlbumSummary{
+		Album:      domain.Album{ID: 3, Name: "Empty Archive", RelativePath: "albums/empty", CreatedAt: now.Add(time.Hour)},
+		MediaCount: 0,
+		TotalBytes: 0,
+	})
+	screen := New(Options{Albums: repo})
+
+	tt := mui.NewTester(screen.View, 700, 600)
+	waitSummaries(t, tt, screen)
+
+	if !tt.HasText("3 albums") {
+		t.Fatalf("expected '3 albums' count tag, got: %q", tt.Texts())
+	}
+	barRect, ok := tt.Find("New Album")
+	cardRect, okCard := tt.Find("Empty Archive")
+	if !ok || !okCard {
+		t.Fatalf("expected toolbar button and album card bounds")
+	}
+	if cardRect.Y <= barRect.Y+barRect.H {
+		t.Fatalf("album card (Y=%.1f) overlaps filter bar (bottom=%.1f)", cardRect.Y, barRect.Y+barRect.H)
+	}
+
+	// Filter to Empty albums only
+	if err := tt.Click("Empty"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	tt.Frame()
+	if !tt.HasText("1 albums") || !tt.HasText("Empty Archive") || tt.HasText("Summer 2026") {
+		t.Fatalf("expected only Empty Archive, got: %q", tt.Texts())
+	}
+
+	// Filter to With media
+	if err := tt.Click("With media"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	tt.Frame()
+	if !tt.HasText("2 albums") || tt.HasText("Empty Archive") || !tt.HasText("Summer 2026") {
+		t.Fatalf("expected only populated albums, got: %q", tt.Texts())
+	}
+
+	// Sort by Most items vs Name A-Z
+	if err := tt.Click("Name A-Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("Most items"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	sorted := screen.getFilteredSummaries()
+	if len(sorted) != 2 || sorted[0].Name != "Summer 2026" {
+		t.Fatalf("expected Summer 2026 first by Most items, got %+v", sorted)
+	}
+
+	// Search with no match shows filtered empty state rather than Create Your First Album
+	screen.SetSearchQuery("NonExistentAlbum")
+	tt.Frame()
+	if !tt.HasText("No matching albums") || tt.HasText("Create Your First Album") {
+		t.Fatalf("expected filtered empty state, got: %q", tt.Texts())
 	}
 }
